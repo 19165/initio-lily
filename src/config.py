@@ -29,6 +29,12 @@ AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "5"))
 MEMORY_WINDOW_SIZE = int(os.getenv("MEMORY_WINDOW_SIZE", "12"))
 DEFAULT_SESSION_ID = os.getenv("DEFAULT_SESSION_ID", "default")
 
+# Tool Execution & Context Safety Limits
+TOOL_DOC_MAX_CHARS = int(os.getenv("TOOL_DOC_MAX_CHARS", "10000"))
+TOOL_EXEC_MAX_CHARS = int(os.getenv("TOOL_EXEC_MAX_CHARS", "5000"))
+TOOL_EXEC_TIMEOUT_SEC = int(os.getenv("TOOL_EXEC_TIMEOUT_SEC", "15"))
+TOOL_IMAGE_MAX_DIMENSION = int(os.getenv("TOOL_IMAGE_MAX_DIMENSION", "1120"))
+
 
 BASE_SYSTEM_PROMPT = (
     "You are Lily, a helpful, sharp, and cheerful assistant girl. "
