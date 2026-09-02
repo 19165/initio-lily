@@ -2,11 +2,13 @@ from datetime import datetime
 from typing import Optional
 from langchain_core.tools import tool
 from todoist_api_python.api import TodoistAPI
-from src.config import TODOIST_API_KEY
+from tavily import TavilyClient
+from src.config import TODOIST_API_KEY, TAVILY_API_KEY
 from src.utils import retry_on_network_error
 from src.db import upsert_fact, get_all_facts, delete_fact
 
 todoist = TodoistAPI(token=TODOIST_API_KEY) if TODOIST_API_KEY else None
+tavily_client = TavilyClient(api_key=TAVILY_API_KEY) if TAVILY_API_KEY else None
 
 
 # -------------------------------------------------------------
@@ -167,6 +169,61 @@ def delete_fact_by_key(key: str) -> str:
         return f"Failed to delete fact: {str(e)}"
 
 
+# -------------------------------------------------------------
+# 4. Real-time Web Search Tools (Tavily API)
+# -------------------------------------------------------------
+@tool
+@retry_on_network_error(max_retries=3)
+def search_web(
+    query: str,
+    topic: str = "general",
+    max_results: int = 4,
+) -> str:
+    """Search the web for real-time information, news, facts, weather, or technical documentation.
+
+    Args:
+        query: Specific search keywords (e.g. 'Bitcoin price today', 'Bangkok weather', 'Python 3.13 changelog').
+        topic: Choose 'general' for general queries/facts, or 'news' for recent breaking news.
+        max_results: Number of search results to fetch (default: 4).
+    """
+    if not tavily_client:
+        return "Tavily API key is missing. Please configure TAVILY_API_KEY in .env."
+
+    try:
+        clean_topic = (
+            topic.strip().lower() if topic in ["general", "news"] else "general"
+        )
+        response = tavily_client.search(
+            query=query,
+            search_depth="basic",
+            topic=clean_topic,
+            max_results=max_results,
+            include_answer=True,
+            include_raw_content=False,
+        )
+
+        results = []
+
+        # 1. Direct answer summary from Tavily
+        if response.get("answer"):
+            results.append(f"💡 Quick Summary: {response['answer']}\n")
+
+        # 2. Detailed search result snippets with URLs
+        raw_results = response.get("results", [])
+        for item in raw_results:
+            title = item.get("title", "No Title")
+            url = item.get("url", "")
+            content = item.get("content", "").strip()
+            results.append(f"🔗 [{title}]({url})\n{content}\n")
+
+        if not results:
+            return "No relevant search results found."
+
+        return "\n".join(results)
+    except Exception as e:
+        return f"Web search failed: {str(e)}"
+
+
 # Centralized Tools List for Agent Binding
 ALL_TOOLS = [
     get_current_time,
@@ -176,4 +233,5 @@ ALL_TOOLS = [
     save_fact,
     get_facts,
     delete_fact_by_key,
+    search_web,
 ]
