@@ -54,7 +54,16 @@ class LilyAgent:
         self.tools_by_name = {t.name: t for t in self.tools}
         self.llm_with_tools = self.llm.bind_tools(self.tools)
 
-        # 3. Build Initial Context (System Prompt + History Restore)
+        # 3. Session Statistics & Telemetry Tracker
+        self.session_stats = {
+            "total_turns": 0,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_tokens": 0,
+            "total_eval_duration_sec": 0.0,
+        }
+
+        # 4. Build Initial Context (System Prompt + History Restore)
         self.messages: List[BaseMessage] = []
         self._refresh_context()
 
@@ -109,10 +118,16 @@ class LilyAgent:
 
         Events:
             - ("token", text_chunk)
-            - ("tool_start", {"name": tool_name, "args": tool_args})
-            - ("tool_end", {"name": tool_name, "result": result})
+            - ("tool_start", {"name": ..., "args": ..., "step": ...})
+            - ("tool_end", {"name": ..., "result": ..., "duration": ..., "step": ...})
+            - ("usage", {"input_tokens": ..., "output_tokens": ..., "total_tokens": ..., "tokens_per_sec": ...})
             - ("error", error_message)
         """
+        turn_start_time = time.perf_counter()
+        turn_in_tokens = 0
+        turn_out_tokens = 0
+        turn_eval_duration_sec = 0.0
+
         # 1. Update system prompt with fresh facts
         self.messages[0] = SystemMessage(content=self._build_system_prompt())
 
@@ -145,6 +160,18 @@ class LilyAgent:
             if full_response is None:
                 yield ("error", "Received empty response from model.")
                 return
+
+            # Extract Token Usage & Performance Metadata from this step
+            usage = full_response.usage_metadata or {}
+            resp_meta = full_response.response_metadata or {}
+
+            step_in_tokens = usage.get("input_tokens") or resp_meta.get("prompt_eval_count") or 0
+            step_out_tokens = usage.get("output_tokens") or resp_meta.get("eval_count") or 0
+            step_eval_duration = (resp_meta.get("eval_duration") or 0) / 1e9
+
+            turn_in_tokens += step_in_tokens
+            turn_out_tokens += step_out_tokens
+            turn_eval_duration_sec += step_eval_duration
 
             # Append assistant response to messages & DB
             self.messages.append(full_response)
@@ -216,11 +243,49 @@ class LilyAgent:
 
             # If no tool calls was made in this turn, we are finished!
             if not has_tool_calls:
-                self._trim_working_context()
-                return
+                break
+
+        # Calculate Turn Metrics & Update Session Accumulator
+        turn_duration = time.perf_counter() - turn_start_time
+        turn_total_tokens = turn_in_tokens + turn_out_tokens
+        tok_per_sec = (
+            turn_out_tokens / turn_eval_duration_sec
+            if turn_eval_duration_sec > 0
+            else 0.0
+        )
+
+        self.session_stats["total_turns"] += 1
+        self.session_stats["total_input_tokens"] += turn_in_tokens
+        self.session_stats["total_output_tokens"] += turn_out_tokens
+        self.session_stats["total_tokens"] += turn_total_tokens
+        self.session_stats["total_eval_duration_sec"] += turn_eval_duration_sec
+
+        # Emit Token Usage Telemetry Event
+        yield (
+            "usage",
+            {
+                "input_tokens": turn_in_tokens,
+                "output_tokens": turn_out_tokens,
+                "total_tokens": turn_total_tokens,
+                "tokens_per_sec": tok_per_sec,
+                "duration_sec": turn_duration,
+                "eval_duration_sec": turn_eval_duration_sec,
+            },
+        )
 
         self._trim_working_context()
-        yield ("error", "Agent exceeded maximum reasoning steps.")
+
+    def get_session_stats(self) -> Dict[str, Any]:
+        """Return aggregated session statistics including token usage and average speed."""
+        stats = self.session_stats.copy()
+        total_eval_dur = stats.get("total_eval_duration_sec", 0.0)
+        total_out = stats.get("total_output_tokens", 0)
+        stats["avg_tokens_per_sec"] = (
+            total_out / total_eval_dur if total_eval_dur > 0 else 0.0
+        )
+        stats["active_session_id"] = self.session_id
+        stats["working_context_messages"] = len(self.messages)
+        return stats
 
     def chat(self, user_input: str) -> str:
         """Synchronous chat fallback."""
