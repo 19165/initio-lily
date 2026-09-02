@@ -6,8 +6,8 @@ import tempfile
 
 import ollama
 import pandas as pd
-from PIL import Image
 from langchain_core.tools import tool
+from PIL import Image
 from pypdf import PdfReader
 
 from src.config import (
@@ -47,7 +47,7 @@ def read_document(file_path: str) -> str:
                 df = pd.read_csv(file_path)
                 text = df.head(100).to_markdown()  # Show schema and top 100 rows
             else:
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     text = f.read()
             return text[:TOOL_DOC_MAX_CHARS] + (
                 "\n...[TRUNCATED]" if len(text) > TOOL_DOC_MAX_CHARS else ""
@@ -62,7 +62,7 @@ def read_document(file_path: str) -> str:
         else:
             return f"Error: Unsupported file format '.{ext}'"
     except Exception as e:
-        return f"Failed to read file: {str(e)}"
+        return f"Failed to read file: {e!s}"
 
 
 @tool
@@ -86,6 +86,7 @@ def execute_python(code: str) -> str:
             capture_output=True,
             text=True,
             timeout=TOOL_EXEC_TIMEOUT_SEC,
+            check=False,
         )
 
         output = result.stdout
@@ -101,7 +102,7 @@ def execute_python(code: str) -> str:
     except subprocess.TimeoutExpired:
         return f"Error: Python execution timed out after {TOOL_EXEC_TIMEOUT_SEC} seconds."
     except Exception as e:
-        return f"Error executing Python: {str(e)}"
+        return f"Error executing Python: {e!s}"
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
@@ -162,4 +163,4 @@ def inspect_image(
             "content", "No response returned from vision model."
         )
     except Exception as e:
-        return f"Failed to inspect image with model '{OLLAMA_VISION_MODEL}': {str(e)}"
+        return f"Failed to inspect image with model '{OLLAMA_VISION_MODEL}': {e!s}"

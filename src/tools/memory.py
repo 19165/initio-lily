@@ -1,5 +1,6 @@
 from langchain_core.tools import tool
-from src.db import upsert_fact, get_all_facts, delete_fact
+
+from src.db import delete_fact, get_all_facts, upsert_fact
 
 
 @tool
@@ -15,7 +16,7 @@ def save_fact(key: str, value: str, category: str = "general") -> str:
         upsert_fact(key=key, value=value, category=category)
         return f"Successfully remembered: [{category}] {key} = '{value}'"
     except Exception as e:
-        return f"Failed to save fact: {str(e)}"
+        return f"Failed to save fact: {e!s}"
 
 
 @tool
@@ -35,7 +36,7 @@ def get_facts(category: str = "") -> str:
             result_lines.append(f"- [{f['category']}] {f['key']}: {f['value']}")
         return "\n".join(result_lines)
     except Exception as e:
-        return f"Failed to fetch facts: {str(e)}"
+        return f"Failed to fetch facts: {e!s}"
 
 
 @tool
@@ -51,4 +52,4 @@ def delete_fact_by_key(key: str) -> str:
             return f"Successfully forgot fact '{key}'."
         return f"Fact '{key}' was not found in memory."
     except Exception as e:
-        return f"Failed to delete fact: {str(e)}"
+        return f"Failed to delete fact: {e!s}"

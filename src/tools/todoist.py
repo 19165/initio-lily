@@ -1,3 +1,5 @@
+from typing import Any
+
 from langchain_core.tools import tool
 from todoist_api_python.api import TodoistAPI
 
@@ -24,7 +26,7 @@ def add_task(
     if not todoist:
         return "Todoist API key is missing. Please configure TODOIST_API_KEY in .env."
 
-    kwargs = {"content": content}
+    kwargs: dict[str, Any] = {"content": content}
     if due_string:
         kwargs["due_string"] = due_string
     if description:

@@ -1,5 +1,5 @@
-import pytest
 from unittest.mock import MagicMock
+
 from src.utils import clean_markdown_text, format_tool_result, retry_on_network_error
 
 

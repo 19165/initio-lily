@@ -59,7 +59,7 @@ def retry_on_network_error(max_retries: int = 5, initial_delay: float = 0.5):
                         delay *= 2
                         continue
                     fn_name = getattr(func, "__name__", str(func))
-                    return f"Error executing {fn_name}: {str(e)}"
+                    return f"Error executing {fn_name}: {e!s}"
 
         return wrapper
 
@@ -78,13 +78,15 @@ def format_tool_result(result: Any, max_chars: int = 4000) -> str:
     if result is None:
         return "Success (No output returned)."
 
+    formatted: str
+
     # 1. String output
     if isinstance(result, str):
         formatted = result.strip()
 
     # 2. Pydantic BaseModel (if present)
     elif hasattr(result, "model_dump_json") and callable(result.model_dump_json):
-        formatted = result.model_dump_json(indent=2)
+        formatted = str(result.model_dump_json(indent=2))
 
     # 3. Dict or List -> Valid JSON
     elif isinstance(result, (dict, list)):
@@ -95,7 +97,7 @@ def format_tool_result(result: Any, max_chars: int = 4000) -> str:
 
     # 4. Exception / Error
     elif isinstance(result, Exception):
-        formatted = f"Tool Error: {str(result)}"
+        formatted = f"Tool Error: {result}"
 
     # 5. Fallback for other data types
     else:

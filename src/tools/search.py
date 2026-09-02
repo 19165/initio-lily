@@ -1,3 +1,5 @@
+from typing import Literal
+
 from langchain_core.tools import tool
 from tavily import TavilyClient
 
@@ -25,8 +27,8 @@ def search_web(
         return "Tavily API key is missing. Please configure TAVILY_API_KEY in .env."
 
     try:
-        clean_topic = (
-            topic.strip().lower() if topic in ["general", "news"] else "general"
+        clean_topic: Literal["general", "news"] = (
+            "news" if topic.strip().lower() == "news" else "general"
         )
         response = tavily_client.search(
             query=query,
@@ -56,7 +58,7 @@ def search_web(
 
         return "\n".join(results)
     except Exception as e:
-        return f"Web search failed: {str(e)}"
+        return f"Web search failed: {e!s}"
 
 
 @tool
@@ -84,4 +86,4 @@ def fetch_web_page(url: str) -> str:
             "\n...[TRUNCATED]" if len(text) > TOOL_DOC_MAX_CHARS else ""
         )
     except Exception as e:
-        return f"Failed to fetch URL: {str(e)}"
+        return f"Failed to fetch URL: {e!s}"

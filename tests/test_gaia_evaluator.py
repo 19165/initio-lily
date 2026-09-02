@@ -1,6 +1,6 @@
 import os
 import tempfile
-import pytest
+
 from src.gaia_evaluator import GAIABenchmarkAgent
 
 

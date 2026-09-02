@@ -1,8 +1,8 @@
 import os
 import tempfile
-import pytest
 from datetime import datetime
-from src.tools import get_current_time, read_document, execute_python
+
+from src.tools import execute_python, get_current_time, read_document
 
 
 class TestSystemTools:

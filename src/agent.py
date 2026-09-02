@@ -1,32 +1,34 @@
 import json
 import time
-from typing import Any, Dict, Generator, List, Optional, Tuple
-from langchain_ollama import ChatOllama
+from collections.abc import Generator
+from typing import Any
+
 from langchain_core.messages import (
-    BaseMessage,
-    SystemMessage,
-    HumanMessage,
     AIMessage,
-    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
     ToolMessage,
 )
+from langchain_ollama import ChatOllama
+
 from src.config import (
-    OLLAMA_MODEL,
-    OLLAMA_BASE_URL,
+    AGENT_MAX_STEPS,
     BASE_SYSTEM_PROMPT,
     DEFAULT_SESSION_ID,
     MEMORY_WINDOW_SIZE,
-    AGENT_MAX_STEPS,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
+)
+from src.db import (
+    ensure_session,
+    get_all_facts,
+    get_recent_messages,
+    init_db,
+    save_message,
 )
 from src.tools import ALL_TOOLS
 from src.utils import format_tool_result
-from src.db import (
-    init_db,
-    ensure_session,
-    save_message,
-    get_recent_messages,
-    get_all_facts,
-)
 
 
 class LilyAgent:
@@ -66,7 +68,7 @@ class LilyAgent:
         }
 
         # 4. Build Initial Context (System Prompt + History Restore)
-        self.messages: List[BaseMessage] = []
+        self.messages: list[BaseMessage] = []
         self._refresh_context()
 
     def _build_system_prompt(self) -> str:
@@ -119,7 +121,7 @@ class LilyAgent:
         """Reset the working context messages to just the base system prompt (stateless turn)."""
         self.messages = [SystemMessage(content=self._build_system_prompt())]
 
-    def chat_stream(self, user_input: str) -> Generator[Tuple[str, Any], None, None]:
+    def chat_stream(self, user_input: str) -> Generator[tuple[str, Any], None, None]:
 
         """Stream autonomous ReAct loop execution yielding (event_type, data).
 
@@ -149,7 +151,7 @@ class LilyAgent:
 
         # 3. Autonomous Streaming Loop
         for step_idx in range(self.max_steps):
-            full_response: Optional[AIMessageChunk] = None
+            full_response: Any = None
             has_tool_calls = False
 
             try:
@@ -157,11 +159,11 @@ class LilyAgent:
                     full_response = chunk if full_response is None else full_response + chunk
 
                     # If this chunk produces text and no tool calls detected yet, yield token
-                    if chunk.content and not full_response.tool_calls:
+                    if chunk.content and full_response and not getattr(full_response, "tool_calls", None):
                         yield ("token", chunk.content)
 
             except Exception as e:
-                yield ("error", f"LLM stream error: {str(e)}")
+                yield ("error", f"LLM stream error: {e!s}")
                 return
 
             if full_response is None:
@@ -169,8 +171,8 @@ class LilyAgent:
                 return
 
             # Extract Token Usage & Performance Metadata from this step
-            usage = full_response.usage_metadata or {}
-            resp_meta = full_response.response_metadata or {}
+            usage = getattr(full_response, "usage_metadata", None) or {}
+            resp_meta = getattr(full_response, "response_metadata", None) or {}
 
             step_in_tokens = usage.get("input_tokens") or resp_meta.get("prompt_eval_count") or 0
             step_out_tokens = usage.get("output_tokens") or resp_meta.get("eval_count") or 0
@@ -184,11 +186,16 @@ class LilyAgent:
             self.messages.append(full_response)
             if self.db_available:
                 try:
+                    content_str = (
+                        full_response.content
+                        if isinstance(full_response.content, str)
+                        else str(full_response.content)
+                    )
                     save_message(
                         self.session_id,
                         role="ai",
-                        content=full_response.content,
-                        tool_calls=full_response.tool_calls,
+                        content=content_str,
+                        tool_calls=getattr(full_response, "tool_calls", None),
                     )
                 except Exception as e:
                     print(f"[Warning] Failed to persist AI message: {e}")
@@ -218,7 +225,7 @@ class LilyAgent:
                             raw_result = tool.invoke(tool_args)
                             clean_result = format_tool_result(raw_result)
                         except Exception as te:
-                            clean_result = f"Error executing {tool_name}: {str(te)}"
+                            clean_result = f"Error executing {tool_name}: {te!s}"
                     else:
                         clean_result = f"Error: Tool '{tool_name}' not found."
                     duration = time.perf_counter() - t_start
@@ -282,7 +289,7 @@ class LilyAgent:
 
         self._trim_working_context()
 
-    def get_session_stats(self) -> Dict[str, Any]:
+    def get_session_stats(self) -> dict[str, Any]:
         """Return aggregated session statistics including token usage and average speed."""
         stats = self.session_stats.copy()
         total_eval_dur = stats.get("total_eval_duration_sec", 0.0)

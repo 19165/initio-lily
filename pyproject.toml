@@ -15,3 +15,19 @@ dependencies = [
     "pypdf>=6.16.2",
     "tavily-python>=0.8.0",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = [
+    "BLE001",  # Do not catch blind exception (intentional fail-safe fallback in agent tools)
+    "B008",    # Do not perform function call in argument defaults
+    "E501",    # Line length check (handled by formatter)
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+

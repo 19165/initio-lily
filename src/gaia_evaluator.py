@@ -1,20 +1,23 @@
-import sys
 import os
+import sys
 import time
 
 # Reconfigure stdout/stderr encoding for Windows console emojis
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8")
+stdout_reconf = getattr(sys.stdout, "reconfigure", None)
+if callable(stdout_reconf):
+    stdout_reconf(encoding="utf-8")
+stderr_reconf = getattr(sys.stderr, "reconfigure", None)
+if callable(stderr_reconf):
+    stderr_reconf(encoding="utf-8")
 
 # Ensure the root project directory is in the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-from src.agent import LilyAgent
-from src.utils import clean_markdown_text
-from src.config import AGENT_MAX_STEPS
+from src.agent import LilyAgent  # noqa: E402
+from src.config import AGENT_MAX_STEPS  # noqa: E402
+from src.utils import clean_markdown_text  # noqa: E402
+
 
 class GAIABenchmarkAgent:
     def __init__(self, max_steps: int = AGENT_MAX_STEPS, verbose: bool = True):
@@ -66,9 +69,9 @@ class GAIABenchmarkAgent:
                 prompt += f"Attached File Context: You have access to a local file at '{resolved_file}'. Use the `read_document` tool to inspect it.\n\n"
         elif file_name:
             prompt += f"Attached File Context: The question references file '{file_name}', but it could not be located locally.\n\n"
-            
+
         prompt += f"Question: {question}\n\n"
-        
+
         prompt += (
             "CRITICAL INSTRUCTION: You are taking a strict exact-match benchmark test (GAIA). "
             "You MUST output ONLY the final answer without ANY conversational filler, pleasantries, or explanations. "
@@ -79,7 +82,7 @@ class GAIABenchmarkAgent:
             "If you need to look up facts, use `search_web` or `fetch_web_page`. "
             "Take a deep breath and think step-by-step."
         )
-        
+
         # Reset intermediate conversation turns to keep tasks isolated
         self.agent.reset_context()
 
@@ -91,7 +94,7 @@ class GAIABenchmarkAgent:
         for event_type, data in self.agent.chat_stream(prompt):
             if event_type == "token":
                 raw_answer += data
-                
+
             elif event_type == "tool_start":
                 # Clear answer buffer as this text was pre-tool thinking
                 raw_answer = ""
@@ -99,10 +102,10 @@ class GAIABenchmarkAgent:
                 func_args = data.get("args", {})
                 step_num = data.get("step", 1)
                 max_step_reached = max(max_step_reached, step_num)
-                
+
                 if func_name not in tools_called:
                     tools_called.append(func_name)
-                    
+
                 if self.verbose:
                     print(f"    🔍 [Step {step_num}] Calling Tool: {func_name}")
                     if func_name == "execute_python" and "code" in func_args:
@@ -110,20 +113,19 @@ class GAIABenchmarkAgent:
                         print(f"        └─ Code:\n        {code_snippet}")
                     else:
                         print(f"        └─ Args: {func_args}")
-                        
+
             elif event_type == "tool_end":
                 func_name = data.get("name", "")
                 duration = data.get("duration", 0.0)
                 char_count = data.get("char_count", 0)
                 if self.verbose:
                     print(f"    ✔ Finished {func_name} in {duration:.2f}s ({char_count:,} chars)")
-                    
+
             elif event_type == "usage":
                 total_tok = data.get("total_tokens", 0)
                 in_tok = data.get("input_tokens", 0)
                 out_tok = data.get("output_tokens", 0)
                 speed = data.get("tokens_per_sec", 0.0)
-                dur = data.get("duration_sec", 0.0)
                 self.last_trace.update({
                     "tokens": total_tok,
                     "in_tokens": in_tok,
@@ -132,10 +134,9 @@ class GAIABenchmarkAgent:
                 })
                 if self.verbose:
                     print(f"    ⚡ {total_tok:,} tokens ({in_tok:,} in / {out_tok:,} out) • {speed:.1f} tok/s")
-                    
-            elif event_type == "error":
-                if self.verbose:
-                    print(f"    ❌ Error during step: {data}")
+
+            elif event_type == "error" and self.verbose:
+                print(f"    ❌ Error during step: {data}")
 
         total_duration = time.perf_counter() - start_time
         clean_ans = clean_markdown_text(raw_answer.strip())

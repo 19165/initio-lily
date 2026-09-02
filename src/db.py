@@ -1,19 +1,17 @@
 import json
 import socket
-from typing import Any, Dict, List, Optional
-import psycopg
+from typing import Any, cast
+
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
+
 from src.config import (
+    DATABASE_URL,
     POSTGRES_HOST,
     POSTGRES_PORT,
-    POSTGRES_DB,
-    POSTGRES_USER,
-    POSTGRES_PASSWORD,
-    DATABASE_URL,
 )
 
-_pool: Optional[ConnectionPool] = None
+_pool: ConnectionPool | None = None
 
 
 def is_db_available() -> bool:
@@ -21,7 +19,7 @@ def is_db_available() -> bool:
     try:
         with socket.create_connection((POSTGRES_HOST, POSTGRES_PORT), timeout=0.5):
             return True
-    except (socket.timeout, ConnectionRefusedError, OSError):
+    except (TimeoutError, ConnectionRefusedError, OSError):
         return False
 
 
@@ -111,8 +109,8 @@ def save_message(
     session_id: str,
     role: str,
     content: str,
-    tool_calls: Optional[List[Dict[str, Any]]] = None,
-    tool_call_id: Optional[str] = None,
+    tool_calls: Any | None = None,
+    tool_call_id: str | None = None,
 ) -> None:
     """Save a conversation message and touch session updated_at."""
     ensure_session(session_id)
@@ -128,7 +126,7 @@ def save_message(
         conn.commit()
 
 
-def get_recent_messages(session_id: str, limit: int = 12) -> List[Dict[str, Any]]:
+def get_recent_messages(session_id: str, limit: int = 12) -> list[dict[str, Any]]:
     """Retrieve the most recent N messages for a session in chronological order."""
     sql = """
     SELECT role, content, tool_calls, tool_call_id
@@ -141,10 +139,9 @@ def get_recent_messages(session_id: str, limit: int = 12) -> List[Dict[str, Any]
     ) sub
     ORDER BY id ASC;
     """
-    with get_pool().connection(timeout=2.0) as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, (session_id, limit))
-            return cur.fetchall()
+    with get_pool().connection(timeout=2.0) as conn, conn.cursor() as cur:
+        cur.execute(sql, (session_id, limit))
+        return cast(list[dict[str, Any]], cur.fetchall())
 
 
 # -------------------------------------------------------------
@@ -166,7 +163,7 @@ def upsert_fact(key: str, value: str, category: str = "general") -> None:
         conn.commit()
 
 
-def get_all_facts(category: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_all_facts(category: str | None = None) -> list[dict[str, Any]]:
     """Retrieve all user facts, optionally filtered by category."""
     if category:
         sql = "SELECT key, value, category FROM user_facts WHERE category = %s ORDER BY key ASC;"
@@ -175,10 +172,9 @@ def get_all_facts(category: Optional[str] = None) -> List[Dict[str, Any]]:
         sql = "SELECT key, value, category FROM user_facts ORDER BY category ASC, key ASC;"
         params = ()
 
-    with get_pool().connection(timeout=2.0) as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            return cur.fetchall()
+    with get_pool().connection(timeout=2.0) as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
+        return cast(list[dict[str, Any]], cur.fetchall())
 
 
 def delete_fact(key: str) -> bool:

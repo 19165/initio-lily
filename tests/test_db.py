@@ -1,6 +1,17 @@
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import patch, MagicMock
-from src.db import is_db_available, init_db, ensure_session, save_message, get_recent_messages, upsert_fact, get_all_facts, delete_fact
+
+from src.db import (
+    delete_fact,
+    ensure_session,
+    get_all_facts,
+    get_recent_messages,
+    init_db,
+    is_db_available,
+    save_message,
+    upsert_fact,
+)
 
 
 class TestDatabaseAvailability:

@@ -1,6 +1,7 @@
-import pytest
-from unittest.mock import patch, MagicMock
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from unittest.mock import patch
+
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
 from src.agent import LilyAgent
 
 
