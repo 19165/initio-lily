@@ -10,3 +10,4 @@ wheels/
 .venv
 .env
 notebook
+.lily_history

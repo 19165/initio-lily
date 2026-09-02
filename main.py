@@ -2,9 +2,10 @@
 
 This module provides a rich, minimalist command-line interface featuring:
 - Live streaming markdown rendering via Rich Live.
-- Interactive prompt with auto-completion using prompt_toolkit.
-- Built-in slash commands (/tasks, /today, /done, /clear, /exit).
-- Visual feedback for LLM tool execution and reasoning cycles.
+- Interactive prompt with persistent history (.lily_history) and auto-completion.
+- Built-in slash commands (/tasks, /today, /done, /debug, /clear, /exit).
+- Debug & Tracing Mode (--debug or /debug) for tool telemetry and reasoning steps.
+- Live PostgreSQL database status indicator.
 """
 
 import sys
@@ -12,7 +13,7 @@ import sys
 # -------------------------------------------------------------
 # 0. Windows Console Encoding Fix
 # -------------------------------------------------------------
-# ป้องกันปัญหา UnicodeEncodeError (charmap codec) บน Windows เมื่อพิมพ์ข้อความภาษาไทยหรือ Emoji
+# ป้องกันปัญหา UnicodeEncodeError บน Windows เมื่อพิมพ์ข้อความภาษาไทยหรือ Emoji
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 if hasattr(sys.stdin, "reconfigure"):
@@ -29,19 +30,19 @@ from rich.live import Live
 from rich import box
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
 
 from src.agent import LilyAgent
 from src.tools import get_tasks, complete_task
 
-# Global Rich Console Instance สำหรับจัดการ Output บน Terminal
+# Global Rich Console Instance
 console = Console()
 
 # -------------------------------------------------------------
 # 2. UI Styling & Constants
 # -------------------------------------------------------------
-# โลโก้ ASCII สไตล์ Minimalist
 LILY_ASCII_LOGO = r"""
    __ _ __     
   / /(_) /_ __ 
@@ -50,16 +51,16 @@ LILY_ASCII_LOGO = r"""
        /___/   
 """
 
-# คำสั่งลัด (Slash Commands) พร้อมคำอธิบายสำหรับ Autocomplete Menu
+# คำสั่งลัด (Slash Commands) พร้อมคำอธิบาย
 SLASH_COMMANDS = {
     "/tasks": "List all active tasks",
     "/today": "Show tasks due today / overdue",
     "/done": "Complete task by name or ID",
+    "/debug": "Toggle debug / tracing mode",
     "/clear": "Clear screen",
     "/exit": "Exit assistant",
 }
 
-# กำหนดระบบ Autocompletion ให้แนะนำคำสั่งเมื่อผู้ใช้พิมพ์ '/'
 slash_completer = WordCompleter(
     words=list(SLASH_COMMANDS.keys()),
     meta_dict=SLASH_COMMANDS,
@@ -67,7 +68,6 @@ slash_completer = WordCompleter(
     match_middle=True,
 )
 
-# ธีมสีสไตล์ Nord สำหรับกล่อง Prompt และ Autocomplete Popup
 prompt_style = Style.from_dict(
     {
         "prompt": "#88c0d0 bold",
@@ -82,31 +82,32 @@ prompt_style = Style.from_dict(
 # -------------------------------------------------------------
 # 3. Helper Functions
 # -------------------------------------------------------------
-def print_banner():
-    """แสดงโลโก้หัวโปรแกรมและเวอร์ชันของ Lily."""
+def print_banner(agent: LilyAgent, debug_mode: bool = False):
+    """แสดงโลโก้หัวโปรแกรม สถานะ Database และสถานะโหมด Debug."""
     logo = Text(LILY_ASCII_LOGO.strip("\n"), style="bold magenta")
     console.print(logo)
+
+    db_badge = (
+        "[bold green]● db online[/bold green]"
+        if agent.db_available
+        else "[bold yellow]○ db offline[/bold yellow]"
+    )
+    debug_badge = " • [bold cyan][DEBUG MODE][/bold cyan]" if debug_mode else ""
+
     console.print(
-        "[dim]lily v0.1 • local brain • type [cyan]/[/cyan] for commands[/dim]\n"
+        f"[dim]lily v0.1 • local brain • {db_badge}{debug_badge} • type [cyan]/[/cyan] for commands[/dim]\n"
     )
 
 
 def render_tasks_table(filter_query: str = ""):
-    """ดึงข้อมูลจาก Todoist และแสดงผลเป็น Table ที่สวยงามบน Terminal.
-
-    Args:
-        filter_query: คำค้นหาฟิลเตอร์ เช่น 'view all', 'today | overdue'
-    """
-    # แสดง Spinner ระหว่างกำลังดึงข้อมูลจาก Todoist API
+    """ดึงข้อมูลจาก Todoist และแสดงผลเป็น Table บน Terminal."""
     with console.status("[dim]fetching tasks...[/dim]", spinner="dots"):
         raw_result = get_tasks.invoke({"filter_query": filter_query})
 
-    # กรณีไม่มีรายการงานค้างอยู่
     if "No tasks found" in raw_result or not raw_result.strip():
         console.print("[dim yellow]No active tasks found.[/dim yellow]\n")
         return
 
-    # สร้าง Table ด้วย Rich
     table = Table(
         box=box.ROUNDED,
         border_style="dim white",
@@ -117,7 +118,6 @@ def render_tasks_table(filter_query: str = ""):
     table.add_column("Task", style="white")
     table.add_column("Due", style="yellow")
 
-    # แปลง Raw String จาก Tool ให้อยู่ในรูปแถวของตาราง
     for line in raw_result.split("\n"):
         if line.startswith("- [ID:"):
             parts = line.split("] ", 1)
@@ -141,50 +141,60 @@ def render_tasks_table(filter_query: str = ""):
 # -------------------------------------------------------------
 def main():
     """Entry point หลักสำหรับรัน Interactive Chat CLI."""
-    # สร้าง Instance ของ Lily Agent (โหลด Database, Memory, Prompts และ Tools)
+    # ตรวจสอบ Flag --debug จากคำสั่งตอนเริ่มรัน (เช่น python main.py --debug)
+    debug_mode = "--debug" in sys.argv or "-d" in sys.argv
+
+    # สร้าง Instance ของ Agent
     agent = LilyAgent()
 
-    # สร้าง Prompt Session พร้อมระบบ Autocomplete และ History
-    session = PromptSession(completer=slash_completer, style=prompt_style)
+    # สร้าง Prompt Session พร้อม Persistent History ในไฟล์ .lily_history
+    session = PromptSession(
+        completer=slash_completer,
+        style=prompt_style,
+        history=FileHistory(".lily_history"),
+    )
 
     console.clear()
-    print_banner()
+    print_banner(agent, debug_mode)
 
-    # ลูปรับคำสั่งจากผู้ใช้ไม่รู้จบ จนกว่าจะสั่ง /exit หรือกด Ctrl+C
     while True:
         try:
-            # รับ Input จากผู้ใช้ผ่าน Prompt Symbol '❯'
             user_input = session.prompt(HTML("<ansicyan>❯ </ansicyan>")).strip()
             if not user_input:
                 continue
 
             # ==================================================
-            # 1. จัดการ Slash Commands (คำสั่งลัดที่จัดการฝั่ง Client โดยไม่ต้องผ่าน LLM)
+            # 1. จัดการ Slash Commands
             # ==================================================
             cmd = user_input.lower()
 
-            # ออกจากโปรแกรม
             if cmd in ["/exit", "/quit", ":q"]:
                 console.print("[dim magenta]bye! 🌸[/dim magenta]")
                 break
 
-            # เคลียร์หน้าจอ Terminal
             elif cmd == "/clear":
                 console.clear()
-                print_banner()
+                print_banner(agent, debug_mode)
                 continue
 
-            # แสดงงานทั้งหมด
+            elif cmd == "/debug":
+                debug_mode = not debug_mode
+                status_str = (
+                    "[bold cyan]ON[/bold cyan]"
+                    if debug_mode
+                    else "[dim]OFF[/dim]"
+                )
+                console.print(f"[dim]⚡ Debug / Tracing Mode: {status_str}[/dim]\n")
+                continue
+
             elif cmd in ["/tasks", "/all"]:
                 render_tasks_table("view all")
                 continue
 
-            # แสดงงานที่ครบกำหนดวันนี้ หรือเกินกำหนด
             elif cmd == "/today":
                 render_tasks_table("today | overdue")
                 continue
 
-            # สั่งมาร์กงานเสร็จโดยตรง
             elif cmd.startswith("/done"):
                 target = user_input[5:].strip()
                 if not target:
@@ -200,7 +210,6 @@ def main():
             # ==================================================
             # 2. Live Markdown Streaming with Seamless Tool Execution
             # ==================================================
-            # เริ่มต้นแสดง Loading Status ระหว่างรอ Token แรกจากโมเดล
             status = console.status(
                 "[dim magenta]thinking...[/dim magenta]", spinner="dots"
             )
@@ -210,16 +219,13 @@ def main():
             accumulated_text = ""
 
             try:
-                # วนลูปรับ Event จาก Agent Generator (Streaming Mode)
                 for event_type, data in agent.chat_stream(user_input):
 
-                    # กรณี Event: ได้รับ Token ข้อความจาก LLM
+                    # Event: ได้รับ Token จาก LLM
                     if event_type == "token":
-                        # ปิด Spinner ทันทีที่เริ่มได้รับข้อความแรก
                         if status._live.is_started:
                             status.stop()
 
-                        # เริ่มต้น Rich Live Renderer สำหรับการพิมพ์ข้อความแบบ Real-time
                         if live is None:
                             console.print()
                             live = Live(
@@ -233,29 +239,53 @@ def main():
                         accumulated_text += data
                         live.update(Markdown(accumulated_text))
 
-                    # กรณี Event: Agent สั่งรัน Tool (Function Calling)
+                    # Event: Agent สั่งรัน Tool
                     elif event_type == "tool_start":
                         func_name = data["name"]
+                        func_args = data.get("args", {})
+                        step_num = data.get("step", 1)
 
-                        # หยุด Live Renderer เดิมชั่วคราว
                         if live is not None:
                             live.stop()
                             live = None
 
-                        # ล้าง accumulated_text เพื่อป้องกันข้อความสะสมซ้ำซ้อนในลูปถัดไป
+                        # ล้าง accumulated_text ป้องกันข้อความซ้ำซ้อน
                         accumulated_text = ""
 
-                        # เปลี่ยนสถานะแสดงชื่อ Tool ที่กำลังทำงานอยู่
+                        # ในโหมด Debug: แสดงรายละเอียด Step และ Arguments
+                        if debug_mode:
+                            if status._live.is_started:
+                                status.stop()
+                            console.print(
+                                f"\n[dim cyan]🔍 [Step {step_num}] Calling Tool: [bold]{func_name}[/bold][/dim cyan]"
+                            )
+                            console.print(
+                                f"[dim cyan]   └─ args: {func_args}[/dim cyan]"
+                            )
+
                         status.update(f"[dim]executing {func_name}...[/dim]")
                         if not status._live.is_started:
                             status.start()
 
-                    # กรณี Event: Tool ทำงานเสร็จสิ้น
+                    # Event: Tool ทำงานเสร็จ
                     elif event_type == "tool_end":
-                        # สลับสถานะกลับมาเป็น 'thinking...' เพื่อรอ LLM สรุปผล
-                        status.update("[dim magenta]thinking...[/dim magenta]")
+                        func_name = data["name"]
+                        duration = data.get("duration", 0.0)
+                        char_count = data.get("char_count", 0)
 
-                    # กรณี Event: เกิดข้อผิดพลาด
+                        # ในโหมด Debug: แสดงเวลาที่ใช้และขนาดของผลลัพธ์
+                        if debug_mode:
+                            if status._live.is_started:
+                                status.stop()
+                            console.print(
+                                f"[dim green]   ✔ finished {func_name} in {duration:.2f}s ({char_count:,} chars output)[/dim green]"
+                            )
+
+                        status.update("[dim magenta]thinking...[/dim magenta]")
+                        if not status._live.is_started:
+                            status.start()
+
+                    # Event: เกิด Error
                     elif event_type == "error":
                         if status._live.is_started:
                             status.stop()
@@ -264,7 +294,6 @@ def main():
                         console.print(f"\n[dim red]Error: {data}[/dim red]")
 
             finally:
-                # Cleanup: ปิดสถานะและแสดงผลลัพธ์ Markdown ครั้งสุดท้ายให้เรียบร้อย
                 if status._live.is_started:
                     status.stop()
                 if live is not None:
@@ -274,11 +303,9 @@ def main():
             console.print()
 
         except KeyboardInterrupt:
-            # ผู้ใช้กด Ctrl+C เพื่อยกเลิก
             console.print("\n[dim]session cancelled.[/dim]")
             break
         except EOFError:
-            # จบไฟล์หรือส่ง EOF
             break
 
 
