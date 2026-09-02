@@ -73,14 +73,14 @@ class TestRetryOnNetworkError:
     def test_retriable_glitch_exceeds_max_retries(self):
         mock_fn = MagicMock(side_effect=TimeoutError("timed out"))
         decorated = retry_on_network_error(max_retries=2, initial_delay=0.01)(mock_fn)
-        res = decorated()
+        res = str(decorated())
         assert "Network Error: Failed after 2 attempts" in res
         assert mock_fn.call_count == 2
 
     def test_non_retriable_error_does_not_retry(self):
         mock_fn = MagicMock(side_effect=ValueError("Bad value"))
         decorated = retry_on_network_error(max_retries=3, initial_delay=0.01)(mock_fn)
-        res = decorated()
+        res = str(decorated())
         assert "Error executing" in res
         assert "Bad value" in res
         assert mock_fn.call_count == 1

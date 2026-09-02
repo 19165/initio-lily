@@ -36,6 +36,9 @@ TOOL_EXEC_MAX_CHARS = int(os.getenv("TOOL_EXEC_MAX_CHARS", "5000"))
 TOOL_EXEC_TIMEOUT_SEC = int(os.getenv("TOOL_EXEC_TIMEOUT_SEC", "15"))
 TOOL_IMAGE_MAX_DIMENSION = int(os.getenv("TOOL_IMAGE_MAX_DIMENSION", "1120"))
 
+# Local Notes Knowledge Base
+NOTES_DIR = os.getenv("NOTES_DIR", "notes")
+
 
 BASE_SYSTEM_PROMPT = (
     "You are Lily, a helpful, sharp, and cheerful assistant girl. "

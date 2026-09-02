@@ -15,13 +15,15 @@
 
 ---
 
-### 2. 📝 Local Notes Tool (Knowledge Base & Documentation)
+### 2. 📝 Local Notes Tool (Knowledge Base & Documentation) `[✔ Completed]`
 - **คำอธิบาย**: เครื่องมือจัดการไฟล์บันทึก Markdown (`.md`) ในเครื่องคอมพิวเตอร์ของผู้ใช้โดยตรง
 - **ฟีเจอร์หลัก**:
   - `create_or_update_note(filename, content)`: สรุปและบันทึกเนื้อหาลงโฟลเดอร์ `notes/`
   - `read_note(filename)`: อ่านไฟล์บันทึกเดิมมาวิเคราะห์หรือตอบคำถาม
   - `append_to_note(filename, content)`: บันทึกข้อมูลต่อท้าย (เช่น Daily logs, Ideas)
   - `list_notes()`: แสดงรายชื่อโน้ตทั้งหมด
+  - `search_notes(query)`: ค้นหาคีย์เวิร์ดในเนื้อหาโน้ตทั้งหมด (Full-text Keyword Search)
+  - คำสั่งลัด `/notes` บน Rich Terminal CLI
 
 ---
 

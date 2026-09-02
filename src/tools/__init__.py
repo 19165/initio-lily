@@ -7,6 +7,13 @@ from src.tools.benchmark import (
     read_document,
 )
 from src.tools.memory import delete_fact_by_key, get_facts, save_fact
+from src.tools.notes import (
+    append_to_note,
+    create_or_update_note,
+    list_notes,
+    read_note,
+    search_notes,
+)
 from src.tools.search import fetch_web_page, search_web
 from src.tools.system import get_current_time
 from src.tools.todoist import add_task, complete_task, get_tasks
@@ -23,6 +30,15 @@ BASE_TOOLS = [
     search_web,
 ]
 
+# Local Knowledge Base & Notes tools
+NOTES_TOOLS = [
+    create_or_update_note,
+    append_to_note,
+    read_note,
+    list_notes,
+    search_notes,
+]
+
 # Benchmark & Execution tools
 BENCHMARK_TOOLS = [
     read_document,
@@ -32,15 +48,18 @@ BENCHMARK_TOOLS = [
 ]
 
 # Centralized tools list bound to LLM
-ALL_TOOLS = BASE_TOOLS + BENCHMARK_TOOLS
+ALL_TOOLS = BASE_TOOLS + NOTES_TOOLS + BENCHMARK_TOOLS
 
 __all__ = [
     "ALL_TOOLS",
     "BASE_TOOLS",
     "BENCHMARK_TOOLS",
+    "NOTES_TOOLS",
     "_preprocess_image",
     "add_task",
+    "append_to_note",
     "complete_task",
+    "create_or_update_note",
     "delete_fact_by_key",
     "execute_python",
     "fetch_web_page",
@@ -48,7 +67,10 @@ __all__ = [
     "get_facts",
     "get_tasks",
     "inspect_image",
+    "list_notes",
     "read_document",
+    "read_note",
     "save_fact",
+    "search_notes",
     "search_web",
 ]

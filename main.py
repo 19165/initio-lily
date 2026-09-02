@@ -40,10 +40,9 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
 
 from src.agent import LilyAgent
-from src.tools import ALL_TOOLS, get_tasks, complete_task, get_facts
-from src.config import OLLAMA_MODEL, OLLAMA_VISION_MODEL, OLLAMA_BASE_URL
+from src.config import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_VISION_MODEL
+from src.tools import ALL_TOOLS, complete_task, get_facts, get_tasks, list_notes, read_note
 from src.utils import clean_markdown_text
-
 
 # Global Rich Console Instance
 console = Console()
@@ -61,7 +60,8 @@ LILY_ASCII_LOGO = r"""
 
 # คำสั่งลัด (Slash Commands) พร้อมคำอธิบาย
 SLASH_COMMANDS = {
-    "/tools": "List all 12 available agent tools & capabilities",
+    "/tools": "List all 17 available agent tools & capabilities",
+    "/notes": "View all saved local markdown notes in knowledge base",
     "/facts": "View all remembered facts about you from memory",
     "/memory": "Alias for /facts",
     "/tasks": "List all active tasks from Todoist",
@@ -115,16 +115,16 @@ def print_banner(agent: LilyAgent, debug_mode: bool = False):
 
 
 def render_tools_table():
-    """แสดงรายการ Capabilities และ Tool Catalog ทั้งหมด 12 ตัวของ Lily."""
+    """แสดงรายการ Capabilities และ Tool Catalog ทั้งหมด 17 ตัวของ Lily."""
     table = Table(
         box=box.ROUNDED,
         border_style="dim magenta",
         show_header=True,
         header_style="bold magenta",
-        title="[bold magenta]🛠️ Lily Agent Tool Catalog (12 Capabilities)[/bold magenta]",
+        title="[bold magenta]🛠️ Lily Agent Tool Catalog (17 Capabilities)[/bold magenta]",
     )
-    table.add_column("Category", style="bold cyan", width=16)
-    table.add_column("Tool Name", style="white", width=20)
+    table.add_column("Category", style="bold cyan", width=18)
+    table.add_column("Tool Name", style="white", width=22)
     table.add_column("Description", style="dim")
 
     categories = [
@@ -133,9 +133,14 @@ def render_tools_table():
         ("🐍 Python REPL", "execute_python", "Execute Python code in isolated sandbox (15s timeout)"),
         ("🌐 Web & Search", "search_web", "Real-time web search via Tavily Search API"),
         ("🌐 Web & Search", "fetch_web_page", "Deep clean markdown webpage extraction via Tavily Extract"),
-        ("📝 Tasks (Todoist)", "add_task", "Create new task with natural language due date"),
-        ("📝 Tasks (Todoist)", "get_tasks", "Query active tasks using natural filters (today, overdue)"),
-        ("📝 Tasks (Todoist)", "complete_task", "Mark task as completed by title or unique ID"),
+        ("📝 Local Notes", "create_or_update_note", "Save/overwrite Markdown note in local notes/ dir"),
+        ("📝 Local Notes", "append_to_note", "Append timestamped content/logs to existing note"),
+        ("📝 Local Notes", "read_note", "Read content of a local Markdown note"),
+        ("📝 Local Notes", "list_notes", "List all Markdown files in local notes directory"),
+        ("📝 Local Notes", "search_notes", "Full-text keyword search across all local notes"),
+        ("📋 Tasks (Todoist)", "add_task", "Create new task with natural language due date"),
+        ("📋 Tasks (Todoist)", "get_tasks", "Query active tasks using natural filters (today, overdue)"),
+        ("📋 Tasks (Todoist)", "complete_task", "Mark task as completed by title or unique ID"),
         ("💾 Memory (DB)", "save_fact", "Persist user facts/preferences into PostgreSQL memory"),
         ("💾 Memory (DB)", "get_facts", "Retrieve remembered facts by category"),
         ("💾 Memory (DB)", "delete_fact_by_key", "Remove specific fact from persistent memory"),
@@ -144,6 +149,41 @@ def render_tools_table():
 
     for cat, name, desc in categories:
         table.add_row(cat, name, desc)
+
+    console.print(table)
+    console.print()
+
+
+def render_notes_table():
+    """ดึงข้อมูลรายการไฟล์โน้ต Markdown ในโฟลเดอร์ notes/ และแสดงผลเป็น Table."""
+    with console.status("[dim]scanning local notes...[/dim]", spinner="dots"):
+        raw_notes = list_notes.invoke({})
+
+    if "No local notes found" in raw_notes:
+        console.print("[dim yellow]No local notes in 'notes/' directory yet. Ask Lily to create one![/dim yellow]\n")
+        return
+
+    table = Table(
+        box=box.ROUNDED,
+        border_style="dim blue",
+        show_header=True,
+        header_style="bold blue",
+        title="[bold blue]📝 Local Notes Knowledge Base[/bold blue]",
+    )
+    table.add_column("Filename", style="bold white", width=28)
+    table.add_column("Size", style="cyan", width=12)
+    table.add_column("Last Modified", style="dim")
+
+    for line in raw_notes.split("\n"):
+        if line.startswith("- 📄 **"):
+            try:
+                # Format: - 📄 **filename.md** (0.5 KB, Modified: 2026-09-02 22:40)
+                fname_part, meta_part = line[7:].split("** (", 1)
+                meta_part = meta_part.rstrip(")")
+                size_str, mtime_str = meta_part.split(", Modified: ")
+                table.add_row(fname_part.strip(), size_str.strip(), mtime_str.strip())
+            except Exception:
+                continue
 
     console.print(table)
     console.print()
@@ -353,6 +393,10 @@ def main():
 
             elif cmd in ["/tools", "/capabilities"]:
                 render_tools_table()
+                continue
+
+            elif cmd in ["/notes", "/note"]:
+                render_notes_table()
                 continue
 
             elif cmd in ["/facts", "/memory"]:
