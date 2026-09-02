@@ -107,3 +107,50 @@ def format_tool_result(result: Any, max_chars: int = 4000) -> str:
         )
 
     return formatted
+
+
+import re
+
+LATEX_REPLACEMENTS = [
+    # Arrows
+    (r"\$*\\rightarrow\$*|\$*\\to\$*", "→"),
+    (r"\$*\\leftarrow\$*", "←"),
+    (r"\$*\\Rightarrow\$*", "⇒"),
+    (r"\$*\\Leftarrow\$*", "⇐"),
+    (r"\$*\\leftrightarrow\$*", "↔"),
+    (r"\$*\\Leftrightarrow\$*", "⇔"),
+    (r"\$*\\uparrow\$*", "↑"),
+    (r"\$*\\downarrow\$*", "↓"),
+    # Math & Common Symbols
+    (r"\$*\\times\$*", "×"),
+    (r"\$*\\div\$*", "÷"),
+    (r"\$*\\approx\$*", "≈"),
+    (r"\$*\\neq\$*|\$*\\ne\$*", "≠"),
+    (r"\$*\\leq\$*|\$*\\le\$*", "≤"),
+    (r"\$*\\geq\$*|\$*\\ge\$*", "≥"),
+    (r"\$*\\pm\$*", "±"),
+    (r"\$*\\cdot\$*", "·"),
+    (r"\$*\\bullet\$*", "•"),
+    (r"\$*\\degree\$*|\$*\\circ\$*", "°"),
+    (r"\$*\\infty\$*", "∞"),
+    (r"\$*\\sqrt\{([^}]+)\}\$*", r"√(\1)"),
+    (r"\$*\\frac\{([^}]+)\}\{([^}]+)\}\$*", r"(\1/\2)"),
+    # Standalone math tags
+    (r"\$\s*\$", ""),
+]
+
+
+def clean_markdown_text(text: str) -> str:
+    """Clean and sanitize LLM text output by converting LaTeX math symbols into clean Unicode.
+
+    Prevents ugly raw strings like '$\\rightarrow$' on terminal and markdown viewers.
+    """
+    if not text:
+        return ""
+
+    cleaned = text
+    for pattern, replacement in LATEX_REPLACEMENTS:
+        cleaned = re.sub(pattern, replacement, cleaned)
+
+    return cleaned
+

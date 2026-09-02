@@ -42,6 +42,8 @@ from prompt_toolkit.formatted_text import HTML
 from src.agent import LilyAgent
 from src.tools import ALL_TOOLS, get_tasks, complete_task, get_facts
 from src.config import OLLAMA_MODEL, OLLAMA_VISION_MODEL, OLLAMA_BASE_URL
+from src.utils import clean_markdown_text
+
 
 # Global Rich Console Instance
 console = Console()
@@ -428,7 +430,8 @@ def main():
                             live.start()
 
                         accumulated_text += data
-                        live.update(Markdown(accumulated_text))
+                        live.update(Markdown(clean_markdown_text(accumulated_text)))
+
 
                     # Event: Agent สั่งรัน Tool
                     elif event_type == "tool_start":
@@ -496,7 +499,8 @@ def main():
                         if status._live.is_started:
                             status.stop()
                         if live is not None:
-                            live.update(Markdown(accumulated_text))
+                            live.update(Markdown(clean_markdown_text(accumulated_text)))
+
                             live.stop()
                             live = None
 
@@ -523,7 +527,8 @@ def main():
                 if status._live.is_started:
                     status.stop()
                 if live is not None:
-                    live.update(Markdown(accumulated_text))
+                    live.update(Markdown(clean_markdown_text(accumulated_text)))
+
                     live.stop()
 
             console.print()
