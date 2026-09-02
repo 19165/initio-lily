@@ -345,5 +345,72 @@ def execute_python(code: str) -> str:
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
-ALL_TOOLS.extend([read_document, fetch_web_page, execute_python])
+
+import io
+import ollama
+from PIL import Image
+from src.config import OLLAMA_VISION_MODEL, OLLAMA_BASE_URL
+
+
+
+def _preprocess_image(image_path: str, max_dimension: int = 1120) -> bytes:
+    """Resize image if dimensions exceed max_dimension and return JPEG/PNG bytes."""
+    with Image.open(image_path) as img:
+        img_format = img.format if img.format in ['JPEG', 'PNG', 'WEBP'] else 'JPEG'
+
+        # Convert RGBA to RGB if saving as JPEG
+        if img.mode in ('RGBA', 'LA', 'P') and img_format == 'JPEG':
+            img = img.convert('RGB')
+
+        width, height = img.size
+        if max(width, height) > max_dimension:
+            scale = max_dimension / max(width, height)
+            new_size = (int(width * scale), int(height * scale))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+        buffer = io.BytesIO()
+        img.save(buffer, format=img_format, quality=85)
+        return buffer.getvalue()
+
+
+@tool
+@retry_on_network_error(max_retries=3)
+def inspect_image(
+    image_path: str,
+    query: str = "Describe this image in detail and transcribe any visible text or data.",
+) -> str:
+    """Inspect and analyze a local image file using the Multimodal Vision Model.
+    Use this tool whenever you need to see, read, or reason about an image (e.g. diagrams, charts, chessboards, photos).
+
+    Args:
+        image_path: Absolute or relative path to the image file (.png, .jpg, .jpeg, .webp, .bmp, .gif).
+        query: Specific question or instruction regarding what to look for or calculate from the image.
+    """
+    if not os.path.exists(image_path):
+        return f"Error: Image file not found at {image_path}"
+
+    try:
+        # Preprocess and resize image to reduce token burn & upload payload
+        image_bytes = _preprocess_image(image_path)
+
+        client = ollama.Client(host=OLLAMA_BASE_URL)
+        response = client.chat(
+            model=OLLAMA_VISION_MODEL,
+            messages=[
+                {
+                    "role": "user",
+                    "content": query,
+                    "images": [image_bytes],
+                }
+            ],
+        )
+        return response.get("message", {}).get(
+            "content", "No response returned from vision model."
+        )
+    except Exception as e:
+        return f"Failed to inspect image with model '{OLLAMA_VISION_MODEL}': {str(e)}"
+
+
+ALL_TOOLS.extend([read_document, fetch_web_page, execute_python, inspect_image])
+
 

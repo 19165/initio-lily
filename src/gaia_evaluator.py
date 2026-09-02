@@ -30,7 +30,11 @@ class GAIABenchmarkAgent:
                     break
         
         if resolved_file:
-            prompt += f"Attached File Context: You have access to a local file at '{resolved_file}'. Use the 'read_document' tool to inspect it.\n\n"
+            ext = resolved_file.lower().split('.')[-1]
+            if ext in ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif']:
+                prompt += f"Attached Image Context: You have access to a local image at '{resolved_file}'. Use the `inspect_image` tool with specific questions to view, read, and analyze it.\n\n"
+            else:
+                prompt += f"Attached File Context: You have access to a local file at '{resolved_file}'. Use the `read_document` tool to inspect it.\n\n"
         elif file_name:
             prompt += f"Attached File Context: The question references file '{file_name}', but it could not be located locally.\n\n"
             
@@ -41,8 +45,9 @@ class GAIABenchmarkAgent:
             "You MUST output ONLY the final answer without ANY conversational filler, pleasantries, or explanations. "
             "For example, if the answer is 42, just output '42'. If the answer is 'John Doe', output 'John Doe'. "
             "Do not write 'The answer is 42' or 'Here is the result'.\n"
-            "If you need to calculate something or manipulate data, use the execute_python tool. "
-            "If you need to look up facts, use search_web or fetch_web_page. "
+            "If you need to view or read an image, use the `inspect_image` tool. "
+            "If you need to calculate something or manipulate data, use the `execute_python` tool. "
+            "If you need to look up facts, use `search_web` or `fetch_web_page`. "
             "Take a deep breath and think step-by-step."
         )
         raw_answer = self.agent.chat(prompt)

@@ -7,9 +7,11 @@ load_dotenv()
 TODOIST_API_KEY = os.getenv("TODOIST_API_KEY", "")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
-# Ollama LLM Configuration
+# Ollama LLM & Vision Configuration
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:cloud")
+OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", OLLAMA_MODEL)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
 
 # PostgreSQL Database Configuration
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
