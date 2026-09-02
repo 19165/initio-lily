@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any, Dict, Generator, List, Optional, Tuple
 from langchain_ollama import ChatOllama
 from langchain_core.messages import (
@@ -125,7 +126,7 @@ class LilyAgent:
                 print(f"[Warning] Failed to persist human message: {e}")
 
         # 3. Autonomous Streaming Loop
-        for _ in range(self.max_steps):
+        for step_idx in range(self.max_steps):
             full_response: Optional[AIMessageChunk] = None
             has_tool_calls = False
 
@@ -166,8 +167,17 @@ class LilyAgent:
                     tool_args = call["args"]
                     call_id = call["id"]
 
-                    yield ("tool_start", {"name": tool_name, "args": tool_args})
+                    yield (
+                        "tool_start",
+                        {
+                            "name": tool_name,
+                            "args": tool_args,
+                            "step": step_idx + 1,
+                            "max_steps": self.max_steps,
+                        },
+                    )
 
+                    t_start = time.perf_counter()
                     tool = self.tools_by_name.get(tool_name)
                     if tool:
                         try:
@@ -177,8 +187,18 @@ class LilyAgent:
                             clean_result = f"Error executing {tool_name}: {str(te)}"
                     else:
                         clean_result = f"Error: Tool '{tool_name}' not found."
+                    duration = time.perf_counter() - t_start
 
-                    yield ("tool_end", {"name": tool_name, "result": clean_result})
+                    yield (
+                        "tool_end",
+                        {
+                            "name": tool_name,
+                            "result": clean_result,
+                            "duration": duration,
+                            "step": step_idx + 1,
+                            "char_count": len(clean_result),
+                        },
+                    )
 
                     tool_msg = ToolMessage(content=clean_result, tool_call_id=call_id)
                     self.messages.append(tool_msg)
