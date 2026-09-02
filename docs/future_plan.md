@@ -56,3 +56,11 @@
 - **ฟีเจอร์หลัก**:
   - Daily Morning Briefing: สรุปงานค้างใน Todoist และสภาพอากาศตอน 08:00 น.
   - Proactive Reminders: แจ้งเตือนเมื่อใกล้ถึงเวลานัดหมาย
+
+---
+
+### 7. 📚 Advanced Output Pagination / RAG for Large Files
+- **คำอธิบาย**: ปรับปรุงการอ่านไฟล์ขนาดใหญ่มากๆ (เช่น PDF หลักร้อยหน้า หรือ CSV หมื่นบรรทัด)
+- **ฟีเจอร์หลัก**:
+  - สร้างระบบ Chunking หรือ Pagination ใน `read_document` Tool แทนการ Truncate (ตัดทิ้ง) แบบทื่อๆ
+  - ให้ Agent ใช้คำสั่ง `read_next_page()` หรือประยุกต์ใช้ Local RAG เพื่อดึงเฉพาะบริบทที่สำคัญมาตอบ
