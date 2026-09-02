@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: lily_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lily_db}
+      POSTGRES_USER: ${POSTGRES_USER:-lily_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lily_secret}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
