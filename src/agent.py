@@ -113,7 +113,12 @@ class LilyAgent:
             except Exception as e:
                 print(f"[Warning] Failed to restore session history: {e}")
 
+    def reset_context(self) -> None:
+        """Reset the working context messages to just the base system prompt (stateless turn)."""
+        self.messages = [SystemMessage(content=self._build_system_prompt())]
+
     def chat_stream(self, user_input: str) -> Generator[Tuple[str, Any], None, None]:
+
         """Stream autonomous ReAct loop execution yielding (event_type, data).
 
         Events:

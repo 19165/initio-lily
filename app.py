@@ -115,23 +115,35 @@ def run_and_submit_all(manual_username: str, limit_count: int, profile: gr.OAuth
     # 4. Run Agent
     results_log = []
     answers_payload = []
-    print(f"Running agent on {len(questions_data)} questions...")
+    print(f"\n=======================================================")
+    print(f"🚀 Starting GAIA Evaluation ({len(questions_data)} Tasks)")
+    print(f"=======================================================")
+    
     for idx, item in enumerate(questions_data, start=1):
         task_id = item.get("task_id")
         question_text = item.get("question")
         file_name = item.get("file_name")
+        level = item.get("Level", "1")
         if not task_id or question_text is None:
             print(f"Skipping item with missing task_id or question: {item}")
             continue
         
-        print(f"\n[{idx}/{len(questions_data)}] Running Task: {task_id}")
+        print(f"\n[{idx}/{len(questions_data)}] 📋 Task ID: {task_id} (Level {level})")
+        print(f"    ❓ Question: {question_text[:120]}..." if len(question_text) > 120 else f"    ❓ Question: {question_text}")
         if file_name:
-            print(f"  Referenced file: {file_name}")
+            print(f"    📎 File: {file_name}")
 
         try:
-            # PureAgent automatically resolves file_name to local GAIA/2023/ paths
+            # PureAgent automatically resolves file_name to local GAIA/2023/ paths and logs trace steps
             submitted_answer = agent(question_text, file_name=file_name)
-            print(f"  Agent Answer: {submitted_answer}")
+            trace = getattr(agent, "last_trace", {})
+            tools_str = ", ".join(trace.get("tools_used", [])) if trace.get("tools_used") else "Direct"
+            duration = trace.get("duration", 0.0)
+            tokens = trace.get("tokens", 0)
+            steps = trace.get("steps", 1)
+
+            print(f"    🎯 Answer: '{submitted_answer}' (in {duration:.2f}s, {steps} steps, tools: [{tools_str}])")
+            
             answers_payload.append(
                 {"task_id": task_id, "submitted_answer": submitted_answer}
             )
@@ -140,15 +152,23 @@ def run_and_submit_all(manual_username: str, limit_count: int, profile: gr.OAuth
                     "Task ID": task_id,
                     "Question": question_text,
                     "Submitted Answer": submitted_answer,
+                    "Tools Used": tools_str,
+                    "Steps": steps,
+                    "Duration (s)": round(duration, 2),
+                    "Tokens": tokens,
                 }
             )
         except Exception as e:
-            print(f"Error running agent on task {task_id}: {e}")
+            print(f"    ❌ Error running agent on task {task_id}: {e}")
             results_log.append(
                 {
                     "Task ID": task_id,
                     "Question": question_text,
                     "Submitted Answer": f"AGENT ERROR: {e}",
+                    "Tools Used": "Error",
+                    "Steps": 0,
+                    "Duration (s)": 0,
+                    "Tokens": 0,
                 }
             )
 
@@ -160,9 +180,10 @@ def run_and_submit_all(manual_username: str, limit_count: int, profile: gr.OAuth
     # Always save answers to a local CSV file so they are not lost!
     try:
         results_df.to_csv("submission_log.csv", index=False)
-        print("Saved answers to submission_log.csv")
+        print("\n💾 Saved detailed execution trace to submission_log.csv")
     except Exception as csv_err:
         print(f"Warning: Could not save submission_log.csv: {csv_err}")
+
 
     # 5. Prepare Submission
     submission_data = {

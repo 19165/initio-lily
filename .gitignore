@@ -11,5 +11,6 @@ wheels/
 .env
 notebook
 .lily_history
+submission_log.csv
 
 GAIA
