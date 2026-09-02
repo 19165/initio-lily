@@ -25,7 +25,7 @@ DATABASE_URL = os.getenv(
 )
 
 # Memory, Session & Execution Settings
-AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "8"))
+AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "5"))
 MEMORY_WINDOW_SIZE = int(os.getenv("MEMORY_WINDOW_SIZE", "12"))
 DEFAULT_SESSION_ID = os.getenv("DEFAULT_SESSION_ID", "default")
 
@@ -35,4 +35,3 @@ BASE_SYSTEM_PROMPT = (
     "Format your responses using standard clean Markdown and Unicode characters (e.g. use '→', '•', '✓', '≈') "
     "instead of raw LaTeX math syntax (avoid '$\\rightarrow$', '$\\approx$', etc.)."
 )
-
