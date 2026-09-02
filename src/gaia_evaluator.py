@@ -21,20 +21,11 @@ class GAIABenchmarkAgent:
         self.verbose = verbose
         # Unique session for each evaluator run
         self.agent = LilyAgent(session_id="gaia_benchmark_run", max_steps=max_steps)
+        self.last_trace = self._create_empty_trace()
 
-        self.last_trace = {
-            "tools_used": [],
-            "steps": 0,
-            "duration": 0.0,
-            "tokens": 0,
-            "in_tokens": 0,
-            "out_tokens": 0,
-            "speed": 0.0,
-        }
-        
-    def __call__(self, question: str, file_name: str | None = None, file_path: str | None = None) -> str:
-        start_time = time.perf_counter()
-        self.last_trace = {
+    def _create_empty_trace(self) -> dict:
+        """Create a clean empty trace dictionary."""
+        return {
             "tools_used": [],
             "steps": 0,
             "duration": 0.0,
@@ -44,13 +35,11 @@ class GAIABenchmarkAgent:
             "speed": 0.0,
         }
 
-        prompt = ""
-        resolved_file = None
-        
+    def _resolve_file(self, file_name: str | None = None, file_path: str | None = None) -> str | None:
+        """Resolve file path against direct path or local GAIA directories."""
         if file_path and os.path.exists(file_path):
-            resolved_file = file_path
-        elif file_name:
-            # Check local GAIA directories
+            return file_path
+        if file_name:
             candidates = [
                 os.path.abspath(file_name),
                 os.path.abspath(os.path.join("GAIA", "2023", "validation", file_name)),
@@ -59,9 +48,16 @@ class GAIABenchmarkAgent:
             ]
             for c in candidates:
                 if os.path.exists(c):
-                    resolved_file = c
-                    break
-        
+                    return c
+        return None
+
+    def __call__(self, question: str, file_name: str | None = None, file_path: str | None = None) -> str:
+        start_time = time.perf_counter()
+        self.last_trace = self._create_empty_trace()
+
+        prompt = ""
+        resolved_file = self._resolve_file(file_name=file_name, file_path=file_path)
+
         if resolved_file:
             ext = resolved_file.lower().split('.')[-1]
             if ext in ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif']:
