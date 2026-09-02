@@ -3,7 +3,8 @@
 This module provides a rich, minimalist command-line interface featuring:
 - Live streaming markdown rendering via Rich Live.
 - Interactive prompt with persistent history (.lily_history) and auto-completion.
-- Built-in slash commands (/tasks, /today, /done, /debug, /clear, /exit).
+- Built-in slash commands (/tasks, /today, /done, /stats, /debug, /clear, /exit).
+- Token usage tracing & metrics (real-time tok/s, prompt vs completion stats).
 - Debug & Tracing Mode (--debug or /debug) for tool telemetry and reasoning steps.
 - Live PostgreSQL database status indicator.
 """
@@ -24,6 +25,7 @@ if hasattr(sys.stdin, "reconfigure"):
 # -------------------------------------------------------------
 from rich.console import Console
 from rich.table import Table
+from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.text import Text
 from rich.live import Live
@@ -56,6 +58,7 @@ SLASH_COMMANDS = {
     "/tasks": "List all active tasks",
     "/today": "Show tasks due today / overdue",
     "/done": "Complete task by name or ID",
+    "/stats": "Show token usage & performance stats",
     "/debug": "Toggle debug / tracing mode",
     "/clear": "Clear screen",
     "/exit": "Exit assistant",
@@ -136,6 +139,41 @@ def render_tasks_table(filter_query: str = ""):
     console.print()
 
 
+def render_session_stats(agent: LilyAgent):
+    """แสดงสถิติการใช้ Token และประสิทธิภาพความเร็วของ Session ปัจจุบัน."""
+    stats = agent.get_session_stats()
+    total_tok = stats.get("total_tokens", 0)
+    in_tok = stats.get("total_input_tokens", 0)
+    out_tok = stats.get("total_output_tokens", 0)
+    turns = stats.get("total_turns", 0)
+    speed = stats.get("avg_tokens_per_sec", 0.0)
+
+    in_pct = (in_tok / total_tok * 100) if total_tok > 0 else 0
+    out_pct = (out_tok / total_tok * 100) if total_tok > 0 else 0
+
+    table = Table(box=None, show_header=False, padding=(0, 2))
+    table.add_column("Metric", style="dim white")
+    table.add_column("Value", style="bold cyan")
+
+    table.add_row("Active Session", str(stats.get("active_session_id", "default")))
+    table.add_row("Context Messages", str(stats.get("working_context_messages", 0)))
+    table.add_row("Conversation Turns", f"{turns:,}")
+    table.add_row("Total Tokens Used", f"{total_tok:,}")
+    table.add_row("  ├─ Prompt (In)", f"{in_tok:,} ({in_pct:.1f}%)")
+    table.add_row("  └─ Generated (Out)", f"{out_tok:,} ({out_pct:.1f}%)")
+    table.add_row("Avg Generation Speed", f"{speed:.1f} tok/s")
+
+    panel = Panel(
+        table,
+        title="[bold magenta]📊 Session Token Analytics[/bold magenta]",
+        border_style="dim magenta",
+        box=box.ROUNDED,
+        padding=(1, 2),
+    )
+    console.print(panel)
+    console.print()
+
+
 # -------------------------------------------------------------
 # 4. Main Application Loop
 # -------------------------------------------------------------
@@ -185,6 +223,10 @@ def main():
                     else "[dim]OFF[/dim]"
                 )
                 console.print(f"[dim]⚡ Debug / Tracing Mode: {status_str}[/dim]\n")
+                continue
+
+            elif cmd in ["/stats", "/tokens"]:
+                render_session_stats(agent)
                 continue
 
             elif cmd in ["/tasks", "/all"]:
@@ -284,6 +326,26 @@ def main():
                         status.update("[dim magenta]thinking...[/dim magenta]")
                         if not status._live.is_started:
                             status.start()
+
+                    # Event: สรุป Token Usage ประจำ Turn
+                    elif event_type == "usage":
+                        if status._live.is_started:
+                            status.stop()
+                        if live is not None:
+                            live.update(Markdown(accumulated_text))
+                            live.stop()
+                            live = None
+
+                        # ในโหมด Debug: แสดง Token Usage Bar
+                        if debug_mode:
+                            total_tok = data.get("total_tokens", 0)
+                            in_tok = data.get("input_tokens", 0)
+                            out_tok = data.get("output_tokens", 0)
+                            speed = data.get("tokens_per_sec", 0.0)
+                            dur = data.get("duration_sec", 0.0)
+                            console.print(
+                                f"\n[dim cyan]⚡ {total_tok:,} tokens ({in_tok:,} in / {out_tok:,} out) • {speed:.1f} tok/s • {dur:.2f}s turn[/dim cyan]"
+                            )
 
                     # Event: เกิด Error
                     elif event_type == "error":
