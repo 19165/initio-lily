@@ -24,26 +24,19 @@ def patched_getaddrinfo(*args, **kwargs):
 
 socket.getaddrinfo = patched_getaddrinfo
 
-# Load environment variables from .env file if it exists
-if os.path.exists(".env"):
-    with open(".env", "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, val = line.split("=", 1)
-                key = key.strip()
-                val = val.strip().strip("'\"")
-                os.environ[key] = val
+from dotenv import load_dotenv
 
-    # Map LANGSMITH_* to LANGCHAIN_* to guarantee compatibility across LangChain versions
-    for ls_key, lc_key in [
-        ("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"),
-        ("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2"),
-        ("LANGSMITH_ENDPOINT", "LANGCHAIN_ENDPOINT"),
-        ("LANGSMITH_PROJECT", "LANGCHAIN_PROJECT"),
-    ]:
-        if ls_key in os.environ and lc_key not in os.environ:
-            os.environ[lc_key] = os.environ[ls_key]
+load_dotenv()
+
+# Map LANGSMITH_* to LANGCHAIN_* to guarantee compatibility across LangChain versions
+for ls_key, lc_key in [
+    ("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"),
+    ("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2"),
+    ("LANGSMITH_ENDPOINT", "LANGCHAIN_ENDPOINT"),
+    ("LANGSMITH_PROJECT", "LANGCHAIN_PROJECT"),
+]:
+    if ls_key in os.environ and lc_key not in os.environ:
+        os.environ[lc_key] = os.environ[ls_key]
 
 import gradio as gr
 import requests

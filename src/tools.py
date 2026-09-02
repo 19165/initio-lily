@@ -1,18 +1,27 @@
-from datetime import datetime
-from typing import Optional
-from langchain_core.tools import tool
-from todoist_api_python.api import TodoistAPI
-from tavily import TavilyClient
-from src.config import TODOIST_API_KEY, TAVILY_API_KEY
-from src.utils import retry_on_network_error
-from src.db import upsert_fact, get_all_facts, delete_fact
-
-import sys
+import io
 import os
 import subprocess
+import sys
 import tempfile
+from datetime import datetime
+from typing import Optional
+
+import ollama
 import pandas as pd
+from PIL import Image
+from langchain_core.tools import tool
 from pypdf import PdfReader
+from tavily import TavilyClient
+from todoist_api_python.api import TodoistAPI
+
+from src.config import (
+    OLLAMA_BASE_URL,
+    OLLAMA_VISION_MODEL,
+    TAVILY_API_KEY,
+    TODOIST_API_KEY,
+)
+from src.db import delete_fact, get_all_facts, upsert_fact
+from src.utils import retry_on_network_error
 
 
 
@@ -350,12 +359,6 @@ def execute_python(code: str) -> str:
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
-
-
-import io
-import ollama
-from PIL import Image
-from src.config import OLLAMA_VISION_MODEL, OLLAMA_BASE_URL
 
 
 def _preprocess_image(image_path: str, max_dimension: int = 1120) -> bytes:

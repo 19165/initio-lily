@@ -1,7 +1,9 @@
-import json
-import time
 import functools
+import json
+import re
+import time
 from typing import Any
+
 import requests
 
 try:
@@ -56,7 +58,8 @@ def retry_on_network_error(max_retries: int = 5, initial_delay: float = 0.5):
                         time.sleep(delay)
                         delay *= 2
                         continue
-                    return f"Error executing {func.__name__}: {str(e)}"
+                    fn_name = getattr(func, "__name__", str(func))
+                    return f"Error executing {fn_name}: {str(e)}"
 
         return wrapper
 
@@ -108,8 +111,6 @@ def format_tool_result(result: Any, max_chars: int = 4000) -> str:
 
     return formatted
 
-
-import re
 
 LATEX_REPLACEMENTS = [
     # Arrows
