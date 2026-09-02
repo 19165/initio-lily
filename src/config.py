@@ -24,9 +24,11 @@ DATABASE_URL = os.getenv(
     f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}",
 )
 
-# Memory & Session Settings
+# Memory, Session & Execution Settings
+AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "8"))
 MEMORY_WINDOW_SIZE = int(os.getenv("MEMORY_WINDOW_SIZE", "12"))
 DEFAULT_SESSION_ID = os.getenv("DEFAULT_SESSION_ID", "default")
+
 
 BASE_SYSTEM_PROMPT = (
     "You are Lily, a helpful, sharp, and cheerful assistant girl. "

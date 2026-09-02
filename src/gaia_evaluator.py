@@ -14,12 +14,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.agent import LilyAgent
 from src.utils import clean_markdown_text
+from src.config import AGENT_MAX_STEPS
 
 class GAIABenchmarkAgent:
-    def __init__(self, verbose: bool = True):
+    def __init__(self, max_steps: int = AGENT_MAX_STEPS, verbose: bool = True):
         self.verbose = verbose
         # Unique session for each evaluator run
-        self.agent = LilyAgent(session_id="gaia_benchmark_run", max_steps=15)
+        self.agent = LilyAgent(session_id="gaia_benchmark_run", max_steps=max_steps)
+
         self.last_trace = {
             "tools_used": [],
             "steps": 0,

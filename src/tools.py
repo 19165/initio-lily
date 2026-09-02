@@ -7,11 +7,13 @@ from src.config import TODOIST_API_KEY, TAVILY_API_KEY
 from src.utils import retry_on_network_error
 from src.db import upsert_fact, get_all_facts, delete_fact
 
+import sys
 import os
 import subprocess
 import tempfile
 import pandas as pd
 from pypdf import PdfReader
+
 
 
 todoist = TodoistAPI(token=TODOIST_API_KEY) if TODOIST_API_KEY else None
@@ -266,7 +268,7 @@ def read_document(file_path: str) -> str:
             )
             return text[:10000] + ("\n...[TRUNCATED]" if len(text) > 10000 else "")
 
-        elif ext in ["csv", "txt", "md", "json"]:
+        elif ext in ["csv", "txt", "md", "json", "py"]:
             if ext == "csv":
                 df = pd.read_csv(file_path)
                 text = df.head(100).to_markdown()  # Show schema and top 100 rows
@@ -328,10 +330,11 @@ def execute_python(code: str) -> str:
         temp_path = f.name
 
     try:
-        # Run the script with a 15-second timeout
+        # Run the script with a 15-second timeout using the project's virtualenv Python
         result = subprocess.run(
-            ["python", temp_path], capture_output=True, text=True, timeout=15
+            [sys.executable, temp_path], capture_output=True, text=True, timeout=15
         )
+
         output = result.stdout
         if result.stderr:
             output += f"\n--- STDERR ---\n{result.stderr}"

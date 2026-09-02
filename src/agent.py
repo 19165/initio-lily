@@ -16,6 +16,7 @@ from src.config import (
     BASE_SYSTEM_PROMPT,
     DEFAULT_SESSION_ID,
     MEMORY_WINDOW_SIZE,
+    AGENT_MAX_STEPS,
 )
 from src.tools import ALL_TOOLS
 from src.utils import format_tool_result
@@ -32,12 +33,13 @@ class LilyAgent:
     def __init__(
         self,
         session_id: str = DEFAULT_SESSION_ID,
-        max_steps: int = 5,
+        max_steps: int = AGENT_MAX_STEPS,
         window_size: int = MEMORY_WINDOW_SIZE,
     ):
         self.session_id = session_id
         self.max_steps = max_steps
         self.window_size = window_size
+
 
         # 1. Initialize Database & Session
         try:

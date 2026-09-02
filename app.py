@@ -53,7 +53,7 @@ from agent import PureAgent
 # --- Constants ---
 DEFAULT_API_URL = "https://agents-course-unit4-scoring.hf.space"
 
-def run_and_submit_all(manual_username: str, limit_count: int, profile: gr.OAuthProfile | None = None):
+def run_and_submit_all(manual_username: str, limit_count: int, max_steps: int = 6, profile: gr.OAuthProfile | None = None):
     """
     Fetches questions, runs the PureAgent on them, maps local GAIA files,
     submits all answers, and displays the results.
@@ -83,12 +83,13 @@ def run_and_submit_all(manual_username: str, limit_count: int, profile: gr.OAuth
     questions_url = f"{api_url}/questions"
     submit_url = f"{api_url}/submit"
 
-    # 2. Instantiate Agent
+    # 2. Instantiate Agent with configurable max_steps
     try:
-        agent = PureAgent()
+        agent = PureAgent(max_steps=int(max_steps), verbose=True)
     except Exception as e:
         print(f"Error instantiating agent: {e}")
         return f"Error initializing agent: {e}", None
+
 
     # 3. Fetch Questions
     print(f"Fetching questions from: {questions_url}")
@@ -251,11 +252,19 @@ with gr.Blocks(title="Lily Agent - GAIA Unit 4 Evaluation Runner") as demo:
             maximum=20,
             value=2,
             step=1,
-            label="Number of Questions to Run (Default 2 for testing)",
+            label="Questions to Run",
+            scale=2
+        )
+        max_steps_slider = gr.Slider(
+            minimum=2,
+            maximum=15,
+            value=6,
+            step=1,
+            label="Max Steps per Task (Recommended: 5-8)",
             scale=2
         )
 
-    run_button = gr.Button("?? Run Evaluation & Submit Answers", variant="primary")
+    run_button = gr.Button("🚀 Run Evaluation & Submit Answers", variant="primary")
 
     status_output = gr.Textbox(
         label="Run Status / Submission Result", lines=5, interactive=False
@@ -264,9 +273,10 @@ with gr.Blocks(title="Lily Agent - GAIA Unit 4 Evaluation Runner") as demo:
 
     run_button.click(
         fn=run_and_submit_all,
-        inputs=[hf_username, question_limit],
+        inputs=[hf_username, question_limit, max_steps_slider],
         outputs=[status_output, results_table]
     )
+
 
 if __name__ == "__main__":
     print("\n" + "-" * 30 + " Starting Lily Local Gradio Evaluator " + "-" * 30)
