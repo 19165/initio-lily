@@ -235,3 +235,115 @@ ALL_TOOLS = [
     delete_fact_by_key,
     search_web,
 ]
+
+import os
+import subprocess
+import tempfile
+import pandas as pd
+from pypdf import PdfReader
+
+# -------------------------------------------------------------
+# 5. GAIA Benchmark Tier 1 Tools
+# -------------------------------------------------------------
+@tool
+def read_document(file_path: str) -> str:
+    """Read and extract text from a local document (PDF, CSV, Excel, TXT, MD, JSON).
+    
+    Args:
+        file_path: Absolute or relative path to the file.
+    """
+    if not os.path.exists(file_path):
+        return f"Error: File not found at {file_path}"
+    
+    ext = file_path.lower().split('.')[-1]
+    try:
+        if ext == 'pdf':
+            reader = PdfReader(file_path)
+            text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+            return text[:10000] + ("\n...[TRUNCATED]" if len(text) > 10000 else "")
+            
+        elif ext in ['csv', 'txt', 'md', 'json']:
+            if ext == 'csv':
+                df = pd.read_csv(file_path)
+                text = df.head(100).to_markdown() # Show schema and top 100 rows
+            else:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+            return text[:10000] + ("\n...[TRUNCATED]" if len(text) > 10000 else "")
+            
+        elif ext in ['xls', 'xlsx']:
+            df = pd.read_excel(file_path)
+            text = df.head(100).to_markdown()
+            return text[:10000] + ("\n...[TRUNCATED]" if len(text) > 10000 else "")
+        else:
+            return f"Error: Unsupported file format '.{ext}'"
+    except Exception as e:
+        return f"Failed to read file: {str(e)}"
+
+
+@tool
+@retry_on_network_error(max_retries=3)
+def fetch_web_page(url: str) -> str:
+    """Fetch and extract clean readable text from a specific web page URL using Tavily Extract.
+    
+    Args:
+        url: The full HTTP/HTTPS URL of the web page.
+    """
+    if not tavily_client:
+        return "Tavily API key is missing. Please configure TAVILY_API_KEY in .env."
+
+    try:
+        response = tavily_client.extract(urls=[url])
+        results = response.get('results', [])
+        if not results:
+            return "Failed to extract content from URL."
+            
+        text = results[0].get('raw_content', '')
+        if not text:
+            return "No content could be extracted from this URL."
+            
+        return text[:10000] + ("\n...[TRUNCATED]" if len(text) > 10000 else "")
+    except Exception as e:
+        return f"Failed to fetch URL: {str(e)}"
+
+
+@tool
+def execute_python(code: str) -> str:
+    """Execute Python code in a local subprocess and return the standard output.
+    Use this for math calculations, data analysis, or complex logic.
+    Use `print()` to output the result you want to see.
+    
+    Args:
+        code: The Python script to execute.
+    """
+    # Create a temporary file to hold the code
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+        f.write(code)
+        temp_path = f.name
+
+    try:
+        # Run the script with a 15-second timeout
+        result = subprocess.run(
+            ['python', temp_path],
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+        output = result.stdout
+        if result.stderr:
+            output += f"\n--- STDERR ---\n{result.stderr}"
+        
+        if not output.strip():
+            return "Execution completed successfully, but no output was printed. Did you forget to use print()?"
+            
+        return output[:5000] + ("\n...[TRUNCATED]" if len(output) > 5000 else "")
+    except subprocess.TimeoutExpired:
+        return "Error: Python execution timed out after 15 seconds."
+    except Exception as e:
+        return f"Error executing Python: {str(e)}"
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+ALL_TOOLS.extend([read_document, fetch_web_page, execute_python])
+
