@@ -7,6 +7,13 @@ from src.config import TODOIST_API_KEY, TAVILY_API_KEY
 from src.utils import retry_on_network_error
 from src.db import upsert_fact, get_all_facts, delete_fact
 
+import os
+import subprocess
+import tempfile
+import pandas as pd
+from pypdf import PdfReader
+
+
 todoist = TodoistAPI(token=TODOIST_API_KEY) if TODOIST_API_KEY else None
 tavily_client = TavilyClient(api_key=TAVILY_API_KEY) if TAVILY_API_KEY else None
 
@@ -236,11 +243,6 @@ ALL_TOOLS = [
     search_web,
 ]
 
-import os
-import subprocess
-import tempfile
-import pandas as pd
-from pypdf import PdfReader
 
 # -------------------------------------------------------------
 # 5. GAIA Benchmark Tier 1 Tools
@@ -248,30 +250,32 @@ from pypdf import PdfReader
 @tool
 def read_document(file_path: str) -> str:
     """Read and extract text from a local document (PDF, CSV, Excel, TXT, MD, JSON).
-    
+
     Args:
         file_path: Absolute or relative path to the file.
     """
     if not os.path.exists(file_path):
         return f"Error: File not found at {file_path}"
-    
-    ext = file_path.lower().split('.')[-1]
+
+    ext = file_path.lower().split(".")[-1]
     try:
-        if ext == 'pdf':
+        if ext == "pdf":
             reader = PdfReader(file_path)
-            text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+            text = "\n".join(
+                [page.extract_text() for page in reader.pages if page.extract_text()]
+            )
             return text[:10000] + ("\n...[TRUNCATED]" if len(text) > 10000 else "")
-            
-        elif ext in ['csv', 'txt', 'md', 'json']:
-            if ext == 'csv':
+
+        elif ext in ["csv", "txt", "md", "json"]:
+            if ext == "csv":
                 df = pd.read_csv(file_path)
-                text = df.head(100).to_markdown() # Show schema and top 100 rows
+                text = df.head(100).to_markdown()  # Show schema and top 100 rows
             else:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     text = f.read()
             return text[:10000] + ("\n...[TRUNCATED]" if len(text) > 10000 else "")
-            
-        elif ext in ['xls', 'xlsx']:
+
+        elif ext in ["xls", "xlsx"]:
             df = pd.read_excel(file_path)
             text = df.head(100).to_markdown()
             return text[:10000] + ("\n...[TRUNCATED]" if len(text) > 10000 else "")
@@ -285,7 +289,7 @@ def read_document(file_path: str) -> str:
 @retry_on_network_error(max_retries=3)
 def fetch_web_page(url: str) -> str:
     """Fetch and extract clean readable text from a specific web page URL using Tavily Extract.
-    
+
     Args:
         url: The full HTTP/HTTPS URL of the web page.
     """
@@ -294,14 +298,14 @@ def fetch_web_page(url: str) -> str:
 
     try:
         response = tavily_client.extract(urls=[url])
-        results = response.get('results', [])
+        results = response.get("results", [])
         if not results:
             return "Failed to extract content from URL."
-            
-        text = results[0].get('raw_content', '')
+
+        text = results[0].get("raw_content", "")
         if not text:
             return "No content could be extracted from this URL."
-            
+
         return text[:10000] + ("\n...[TRUNCATED]" if len(text) > 10000 else "")
     except Exception as e:
         return f"Failed to fetch URL: {str(e)}"
@@ -312,30 +316,29 @@ def execute_python(code: str) -> str:
     """Execute Python code in a local subprocess and return the standard output.
     Use this for math calculations, data analysis, or complex logic.
     Use `print()` to output the result you want to see.
-    
+
     Args:
         code: The Python script to execute.
     """
     # Create a temporary file to hold the code
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".py", delete=False, encoding="utf-8"
+    ) as f:
         f.write(code)
         temp_path = f.name
 
     try:
         # Run the script with a 15-second timeout
         result = subprocess.run(
-            ['python', temp_path],
-            capture_output=True,
-            text=True,
-            timeout=15
+            ["python", temp_path], capture_output=True, text=True, timeout=15
         )
         output = result.stdout
         if result.stderr:
             output += f"\n--- STDERR ---\n{result.stderr}"
-        
+
         if not output.strip():
             return "Execution completed successfully, but no output was printed. Did you forget to use print()?"
-            
+
         return output[:5000] + ("\n...[TRUNCATED]" if len(output) > 5000 else "")
     except subprocess.TimeoutExpired:
         return "Error: Python execution timed out after 15 seconds."
@@ -352,15 +355,14 @@ from PIL import Image
 from src.config import OLLAMA_VISION_MODEL, OLLAMA_BASE_URL
 
 
-
 def _preprocess_image(image_path: str, max_dimension: int = 1120) -> bytes:
     """Resize image if dimensions exceed max_dimension and return JPEG/PNG bytes."""
     with Image.open(image_path) as img:
-        img_format = img.format if img.format in ['JPEG', 'PNG', 'WEBP'] else 'JPEG'
+        img_format = img.format if img.format in ["JPEG", "PNG", "WEBP"] else "JPEG"
 
         # Convert RGBA to RGB if saving as JPEG
-        if img.mode in ('RGBA', 'LA', 'P') and img_format == 'JPEG':
-            img = img.convert('RGB')
+        if img.mode in ("RGBA", "LA", "P") and img_format == "JPEG":
+            img = img.convert("RGB")
 
         width, height = img.size
         if max(width, height) > max_dimension:
@@ -412,5 +414,3 @@ def inspect_image(
 
 
 ALL_TOOLS.extend([read_document, fetch_web_page, execute_python, inspect_image])
-
-

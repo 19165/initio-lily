@@ -3,13 +3,15 @@
 This module provides a rich, minimalist command-line interface featuring:
 - Live streaming markdown rendering via Rich Live.
 - Interactive prompt with persistent history (.lily_history) and auto-completion.
-- Built-in slash commands (/tasks, /today, /done, /stats, /debug, /clear, /exit).
+- Built-in slash commands (/tools, /facts, /tasks, /model, /stats, /debug, /help, /clear, /exit).
 - Token usage tracing & metrics (real-time tok/s, prompt vs completion stats).
-- Debug & Tracing Mode (--debug or /debug) for tool telemetry and reasoning steps.
-- Live PostgreSQL database status indicator.
+- Debug & Tracing Mode (--debug or /debug) for card-based tool telemetry and reasoning steps.
+- Windows file drag-and-drop normalization.
+- Live PostgreSQL database & Multimodal Vision status indicator.
 """
 
 import sys
+import os
 
 # -------------------------------------------------------------
 # 0. Windows Console Encoding Fix
@@ -29,6 +31,7 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.text import Text
 from rich.live import Live
+from rich.syntax import Syntax
 from rich import box
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
@@ -37,7 +40,8 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
 
 from src.agent import LilyAgent
-from src.tools import get_tasks, complete_task
+from src.tools import ALL_TOOLS, get_tasks, complete_task, get_facts
+from src.config import OLLAMA_MODEL, OLLAMA_VISION_MODEL, OLLAMA_BASE_URL
 
 # Global Rich Console Instance
 console = Console()
@@ -55,12 +59,17 @@ LILY_ASCII_LOGO = r"""
 
 # คำสั่งลัด (Slash Commands) พร้อมคำอธิบาย
 SLASH_COMMANDS = {
-    "/tasks": "List all active tasks",
-    "/today": "Show tasks due today / overdue",
-    "/done": "Complete task by name or ID",
-    "/stats": "Show token usage & performance stats",
-    "/debug": "Toggle debug / tracing mode",
+    "/tools": "List all 12 available agent tools & capabilities",
+    "/facts": "View all remembered facts about you from memory",
+    "/memory": "Alias for /facts",
+    "/tasks": "List all active tasks from Todoist",
+    "/today": "Show tasks due today or overdue",
+    "/done": "Complete a task by name or ID (/done <title/id>)",
+    "/model": "Show active LLM, Vision Model, and system info",
+    "/stats": "Show token usage & performance analytics",
+    "/debug": "Toggle live debug / tool telemetry mode",
     "/clear": "Clear screen",
+    "/help": "Show commands and shortcut cheatsheet",
     "/exit": "Exit assistant",
 }
 
@@ -83,10 +92,10 @@ prompt_style = Style.from_dict(
 
 
 # -------------------------------------------------------------
-# 3. Helper Functions
+# 3. Helper Renderers
 # -------------------------------------------------------------
 def print_banner(agent: LilyAgent, debug_mode: bool = False):
-    """แสดงโลโก้หัวโปรแกรม สถานะ Database และสถานะโหมด Debug."""
+    """แสดงโลโก้หัวโปรแกรม สถานะ Database โมเดลที่ใช้งาน และโหมด Debug."""
     logo = Text(LILY_ASCII_LOGO.strip("\n"), style="bold magenta")
     console.print(logo)
 
@@ -95,11 +104,126 @@ def print_banner(agent: LilyAgent, debug_mode: bool = False):
         if agent.db_available
         else "[bold yellow]○ db offline[/bold yellow]"
     )
+    tools_count = len(ALL_TOOLS)
     debug_badge = " • [bold cyan][DEBUG MODE][/bold cyan]" if debug_mode else ""
 
     console.print(
-        f"[dim]lily v0.1 • local brain • {db_badge}{debug_badge} • type [cyan]/[/cyan] for commands[/dim]\n"
+        f"[dim]lily v0.2 • model: [white]{OLLAMA_MODEL}[/white] • {db_badge} • [cyan]{tools_count} tools ready[/cyan]{debug_badge} • type [cyan]/[/cyan] for commands[/dim]\n"
     )
+
+
+def render_tools_table():
+    """แสดงรายการ Capabilities และ Tool Catalog ทั้งหมด 12 ตัวของ Lily."""
+    table = Table(
+        box=box.ROUNDED,
+        border_style="dim magenta",
+        show_header=True,
+        header_style="bold magenta",
+        title="[bold magenta]🛠️ Lily Agent Tool Catalog (12 Capabilities)[/bold magenta]",
+    )
+    table.add_column("Category", style="bold cyan", width=16)
+    table.add_column("Tool Name", style="white", width=20)
+    table.add_column("Description", style="dim")
+
+    categories = [
+        ("👁️ Vision", "inspect_image", "Analyze local images (.png, .jpg) with Multimodal Vision"),
+        ("📄 Documents", "read_document", "Extract text from PDF, CSV, Excel, TXT, JSON, MD files"),
+        ("🐍 Python REPL", "execute_python", "Execute Python code in isolated sandbox (15s timeout)"),
+        ("🌐 Web & Search", "search_web", "Real-time web search via Tavily Search API"),
+        ("🌐 Web & Search", "fetch_web_page", "Deep clean markdown webpage extraction via Tavily Extract"),
+        ("📝 Tasks (Todoist)", "add_task", "Create new task with natural language due date"),
+        ("📝 Tasks (Todoist)", "get_tasks", "Query active tasks using natural filters (today, overdue)"),
+        ("📝 Tasks (Todoist)", "complete_task", "Mark task as completed by title or unique ID"),
+        ("💾 Memory (DB)", "save_fact", "Persist user facts/preferences into PostgreSQL memory"),
+        ("💾 Memory (DB)", "get_facts", "Retrieve remembered facts by category"),
+        ("💾 Memory (DB)", "delete_fact_by_key", "Remove specific fact from persistent memory"),
+        ("⏰ System / Time", "get_current_time", "Get live system date, timestamp, and timezone"),
+    ]
+
+    for cat, name, desc in categories:
+        table.add_row(cat, name, desc)
+
+    console.print(table)
+    console.print()
+
+
+def render_facts_table():
+    """ดึงข้อมูลความจำส่วนตัว (User Facts) จาก PostgreSQL และแสดงผลเป็น Table."""
+    with console.status("[dim]fetching memory facts...[/dim]", spinner="dots"):
+        raw_facts = get_facts.invoke({})
+
+    if "No saved facts found" in raw_facts or not raw_facts.strip():
+        console.print("[dim yellow]No saved facts in memory yet. You can tell Lily to remember things![/dim yellow]\n")
+        return
+
+    table = Table(
+        box=box.ROUNDED,
+        border_style="dim green",
+        show_header=True,
+        header_style="bold green",
+        title="[bold green]💾 Remembered User Facts & Preferences[/bold green]",
+    )
+    table.add_column("Category", style="cyan", width=14)
+    table.add_column("Key", style="bold white", width=22)
+    table.add_column("Value", style="white")
+
+    for line in raw_facts.split("\n"):
+        if line.startswith("- ["):
+            try:
+                # Format: - [category] key: value
+                cat_part, rest = line[3:].split("] ", 1)
+                key, val = rest.split(": ", 1)
+                table.add_row(cat_part.strip(), key.strip(), val.strip())
+            except Exception:
+                continue
+
+    console.print(table)
+    console.print()
+
+
+def render_model_info(agent: LilyAgent):
+    """แสดงข้อมูลสถาปัตยกรรม โมเดล และสถานะระบบ."""
+    table = Table(box=None, show_header=False, padding=(0, 2))
+    table.add_column("Property", style="dim white")
+    table.add_column("Value", style="bold cyan")
+
+    db_status = "Connected (Online)" if agent.db_available else "Disconnected (Offline)"
+    table.add_row("Main LLM", OLLAMA_MODEL)
+    table.add_row("Vision Engine", f"{OLLAMA_VISION_MODEL} (Multimodal)")
+    table.add_row("Ollama Host", OLLAMA_BASE_URL)
+    table.add_row("PostgreSQL DB", db_status)
+    table.add_row("Active Session ID", agent.session_id)
+    table.add_row("Memory Window", f"{agent.window_size} messages")
+    table.add_row("Max ReAct Steps", f"{agent.max_steps} turns per request")
+
+    panel = Panel(
+        table,
+        title="[bold cyan]🤖 System & Model Architecture[/bold cyan]",
+        border_style="dim cyan",
+        box=box.ROUNDED,
+        padding=(1, 2),
+    )
+    console.print(panel)
+    console.print()
+
+
+def render_help_menu():
+    """แสดงคู่มือการใช้งานและ Cheatsheet."""
+    table = Table(
+        box=box.ROUNDED,
+        border_style="dim yellow",
+        show_header=True,
+        header_style="bold yellow",
+        title="[bold yellow]📖 Lily CLI Command Cheatsheet[/bold yellow]",
+    )
+    table.add_column("Command", style="bold cyan", width=16)
+    table.add_column("Description", style="white")
+
+    for cmd, desc in SLASH_COMMANDS.items():
+        table.add_row(cmd, desc)
+
+    console.print(table)
+    console.print("[dim]💡 Tip: You can drag and drop any file (.png, .pdf, .csv, .xlsx) into the terminal to ask questions about it![/dim]\n")
 
 
 def render_tasks_table(filter_query: str = ""):
@@ -225,6 +349,22 @@ def main():
                 console.print(f"[dim]⚡ Debug / Tracing Mode: {status_str}[/dim]\n")
                 continue
 
+            elif cmd in ["/tools", "/capabilities"]:
+                render_tools_table()
+                continue
+
+            elif cmd in ["/facts", "/memory"]:
+                render_facts_table()
+                continue
+
+            elif cmd in ["/model", "/info", "/system"]:
+                render_model_info(agent)
+                continue
+
+            elif cmd in ["/help", "/?"]:
+                render_help_menu()
+                continue
+
             elif cmd in ["/stats", "/tokens"]:
                 render_session_stats(agent)
                 continue
@@ -250,7 +390,16 @@ def main():
                 continue
 
             # ==================================================
-            # 2. Live Markdown Streaming with Seamless Tool Execution
+            # 2. Windows File Drag-and-Drop Normalization
+            # ==================================================
+            # ปรับแต่ง Path กรณีผู้ใช้ลากไฟล์มาวางใน Terminal แล้วมีเครื่องหมายคำพูดครอบ
+            if (user_input.startswith('"') and user_input.endswith('"')) or (user_input.startswith("'") and user_input.endswith("'")):
+                candidate_path = user_input[1:-1].strip()
+                if os.path.exists(candidate_path):
+                    user_input = f"ช่วยตรวจสอบและอธิบายไฟล์นี้ให้หน่อย: {candidate_path}"
+
+            # ==================================================
+            # 3. Live Markdown Streaming with Card-based Tool Telemetry
             # ==================================================
             status = console.status(
                 "[dim magenta]thinking...[/dim magenta]", spinner="dots"
@@ -294,16 +443,31 @@ def main():
                         # ล้าง accumulated_text ป้องกันข้อความซ้ำซ้อน
                         accumulated_text = ""
 
-                        # ในโหมด Debug: แสดงรายละเอียด Step และ Arguments
+                        # ในโหมด Debug: แสดงรายละเอียด Step และ Arguments ด้วย Rich Card UI
                         if debug_mode:
                             if status._live.is_started:
                                 status.stop()
+                            
                             console.print(
-                                f"\n[dim cyan]🔍 [Step {step_num}] Calling Tool: [bold]{func_name}[/bold][/dim cyan]"
+                                f"\n[dim cyan]🔍 [Step {step_num}] Calling Tool: [bold white]{func_name}[/bold white][/dim cyan]"
                             )
-                            console.print(
-                                f"[dim cyan]   └─ args: {func_args}[/dim cyan]"
-                            )
+
+                            # Card พิเศษสำหรับ execute_python: แสดง Syntax Highlighting
+                            if func_name == "execute_python" and "code" in func_args:
+                                code_content = func_args["code"]
+                                syntax = Syntax(code_content, "python", theme="monokai", line_numbers=True)
+                                panel = Panel(syntax, title="[bold yellow]🐍 Python Code to Execute[/bold yellow]", border_style="dim yellow", box=box.ROUNDED)
+                                console.print(panel)
+                            # Card พิเศษสำหรับ inspect_image: แสดง Path และรายละเอียด
+                            elif func_name == "inspect_image":
+                                img_path = func_args.get("image_path", "")
+                                query_text = func_args.get("query", "")
+                                console.print(f"[dim cyan]   ├─ Image: [white]{img_path}[/white][/dim cyan]")
+                                console.print(f"[dim cyan]   └─ Query: [white]{query_text}[/white][/dim cyan]")
+                            else:
+                                console.print(
+                                    f"[dim cyan]   └─ args: {func_args}[/dim cyan]"
+                                )
 
                         status.update(f"[dim]executing {func_name}...[/dim]")
                         if not status._live.is_started:
@@ -373,3 +537,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
