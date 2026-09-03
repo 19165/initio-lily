@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from collections.abc import Generator
 from typing import Any
@@ -27,7 +28,7 @@ from src.db import (
     init_db,
     save_message,
 )
-from src.tools import ALL_TOOLS
+from src.tools import ALL_TOOLS, filter_tools_by_intent
 from src.utils import format_tool_result
 
 
@@ -42,7 +43,6 @@ class LilyAgent:
         self.max_steps = max_steps
         self.window_size = window_size
 
-
         # 1. Initialize Database & Session
         try:
             init_db()
@@ -52,11 +52,10 @@ class LilyAgent:
             print(f"[Info] PostgreSQL not connected ({e}). Running in ephemeral mode.")
             self.db_available = False
 
-        # 2. Setup LLM & Tools
+        # 2. Setup LLM & Tools Catalog
         self.llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL)
         self.tools = ALL_TOOLS
         self.tools_by_name = {t.name: t for t in self.tools}
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
 
         # 3. Session Statistics & Telemetry Tracker
         self.session_stats = {
@@ -70,6 +69,47 @@ class LilyAgent:
         # 4. Build Initial Context (System Prompt + History Restore)
         self.messages: list[BaseMessage] = []
         self._refresh_context()
+
+    @staticmethod
+    def _parse_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
+        """Extract and convert raw pseudo tool syntax (e.g. 'call:search_web{query:...}') into structured tool calls."""
+        if not text or not isinstance(text, str):
+            return []
+
+        calls: list[dict[str, Any]] = []
+
+        # Match 'call:tool_name{args}' or 'call:tool_name(args)'
+        call_pattern = re.compile(r"call:([a-zA-Z0-9_]+)\s*[\{\(]([^}\)]+)[\}\)]")
+        for match in call_pattern.finditer(text):
+            tool_name = match.group(1).strip()
+            args_raw = match.group(2).strip()
+            args_dict: dict[str, Any] = {}
+
+            # 1. Try direct JSON parsing
+            try:
+                candidate = "{" + args_raw + "}" if not args_raw.startswith("{") else args_raw
+                parsed_json = json.loads(candidate)
+                if isinstance(parsed_json, dict):
+                    args_dict = parsed_json
+            except Exception:
+                pass
+
+            # 2. Try unquoted key:value splitting
+            if not args_dict and ":" in args_raw:
+                parts = args_raw.split(":", 1)
+                k = parts[0].strip().strip('"\' ')
+                v = parts[1].strip().strip('"\' ')
+                args_dict = {k: v}
+            elif not args_dict and args_raw:
+                args_dict = {"query": args_raw.strip('"\' ')}
+
+            calls.append({
+                "name": tool_name,
+                "args": args_dict,
+                "id": f"fallback_{tool_name}_{len(calls) + 1}",
+            })
+
+        return calls
 
     def _build_system_prompt(self) -> str:
         """Construct system prompt dynamically with active user facts from memory."""
@@ -122,7 +162,6 @@ class LilyAgent:
         self.messages = [SystemMessage(content=self._build_system_prompt())]
 
     def chat_stream(self, user_input: str) -> Generator[tuple[str, Any], None, None]:
-
         """Stream autonomous ReAct loop execution yielding (event_type, data).
 
         Events:
@@ -149,18 +188,24 @@ class LilyAgent:
             except Exception as e:
                 print(f"[Warning] Failed to persist human message: {e}")
 
-        # 3. Autonomous Streaming Loop
+        # 3. Dynamic Tool Selection (Select 4-6 tools relevant to intent)
+        active_tools = filter_tools_by_intent(user_input, self.tools)
+        llm_with_tools = self.llm.bind_tools(active_tools)
+
+        # 4. Autonomous Streaming Loop
         for step_idx in range(self.max_steps):
             full_response: Any = None
             has_tool_calls = False
 
             try:
-                for chunk in self.llm_with_tools.stream(self.messages):
+                for chunk in llm_with_tools.stream(self.messages):
                     full_response = chunk if full_response is None else full_response + chunk
 
-                    # If this chunk produces text and no tool calls detected yet, yield token
+                    # If this chunk produces text and is not pseudo tool-call syntax, yield token
                     if chunk.content and full_response and not getattr(full_response, "tool_calls", None):
-                        yield ("token", chunk.content)
+                        accumulated = str(full_response.content).strip()
+                        if not accumulated.startswith("call:") and not accumulated.startswith("<tool_call>"):
+                            yield ("token", chunk.content)
 
             except Exception as e:
                 yield ("error", f"LLM stream error: {e!s}")
@@ -169,6 +214,13 @@ class LilyAgent:
             if full_response is None:
                 yield ("error", "Received empty response from model.")
                 return
+
+            # Check for Native or Fallback Tool Calls
+            tool_calls = list(getattr(full_response, "tool_calls", None) or [])
+            if not tool_calls and full_response.content:
+                fallback_calls = self._parse_fallback_tool_calls(str(full_response.content))
+                if fallback_calls:
+                    tool_calls = fallback_calls
 
             # Extract Token Usage & Performance Metadata from this step
             usage = getattr(full_response, "usage_metadata", None) or {}
@@ -183,30 +235,28 @@ class LilyAgent:
             turn_eval_duration_sec += step_eval_duration
 
             # Append assistant response to messages & DB
-            self.messages.append(full_response)
+            ai_content = "" if tool_calls and not getattr(full_response, "tool_calls", None) else str(full_response.content)
+            ai_msg = AIMessage(content=ai_content, tool_calls=tool_calls)
+            self.messages.append(ai_msg)
+
             if self.db_available:
                 try:
-                    content_str = (
-                        full_response.content
-                        if isinstance(full_response.content, str)
-                        else str(full_response.content)
-                    )
                     save_message(
                         self.session_id,
                         role="ai",
-                        content=content_str,
-                        tool_calls=getattr(full_response, "tool_calls", None),
+                        content=ai_content,
+                        tool_calls=tool_calls if tool_calls else None,
                     )
                 except Exception as e:
                     print(f"[Warning] Failed to persist AI message: {e}")
 
-            # Check for Tool Calls
-            if full_response.tool_calls:
+            # Execute Tool Calls
+            if tool_calls:
                 has_tool_calls = True
-                for call in full_response.tool_calls:
+                for call in tool_calls:
                     tool_name = call["name"]
-                    tool_args = call["args"]
-                    call_id = call["id"]
+                    tool_args = call.get("args", {})
+                    call_id = call.get("id", f"call_{tool_name}_{step_idx}")
 
                     yield (
                         "tool_start",

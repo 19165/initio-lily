@@ -65,3 +65,37 @@ class TestLilyAgentContextAndStats:
             prompt = agent._build_system_prompt()
             assert "[Known Facts About the User]:" in prompt
             assert "[user_pref] color: pink" in prompt
+
+
+class TestLilyAgentFallbackParser:
+    def test_parse_single_unquoted_call(self):
+        raw_text = "call:search_web{query:proper form and biomechanics of Burpees exercise}"
+        calls = LilyAgent._parse_fallback_tool_calls(raw_text)
+        assert len(calls) == 1
+        assert calls[0]["name"] == "search_web"
+        assert calls[0]["args"] == {"query": "proper form and biomechanics of Burpees exercise"}
+
+    def test_parse_multiple_parallel_calls(self):
+        raw_text = (
+            "call:search_web{query:Burpees exercise}call:search_web{query:Jump Squats technique}"
+        )
+        calls = LilyAgent._parse_fallback_tool_calls(raw_text)
+        assert len(calls) == 2
+        assert calls[0]["name"] == "search_web"
+        assert calls[0]["args"]["query"] == "Burpees exercise"
+        assert calls[1]["name"] == "search_web"
+        assert calls[1]["args"]["query"] == "Jump Squats technique"
+
+    def test_parse_json_args_call(self):
+        raw_text = 'call:add_task{"content": "Buy Milk", "due_string": "tomorrow at 5pm"}'
+        calls = LilyAgent._parse_fallback_tool_calls(raw_text)
+        assert len(calls) == 1
+        assert calls[0]["name"] == "add_task"
+        assert calls[0]["args"]["content"] == "Buy Milk"
+        assert calls[0]["args"]["due_string"] == "tomorrow at 5pm"
+
+    def test_parse_plain_text_returns_empty(self):
+        raw_text = "Here is the summary of the exercises you asked for."
+        calls = LilyAgent._parse_fallback_tool_calls(raw_text)
+        assert calls == []
+

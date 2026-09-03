@@ -6,6 +6,7 @@ from src.tools.benchmark import (
     inspect_image,
     read_document,
 )
+from src.tools.filter import filter_tools_by_intent
 from src.tools.memory import delete_fact_by_key, get_facts, save_fact
 from src.tools.notes import (
     append_to_note,
@@ -63,6 +64,7 @@ __all__ = [
     "delete_fact_by_key",
     "execute_python",
     "fetch_web_page",
+    "filter_tools_by_intent",
     "get_current_time",
     "get_facts",
     "get_tasks",
