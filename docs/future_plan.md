@@ -66,3 +66,12 @@
 - **ฟีเจอร์หลัก**:
   - สร้างระบบ Chunking หรือ Pagination ใน `read_document` Tool แทนการ Truncate (ตัดทิ้ง) แบบทื่อๆ
   - ให้ Agent ใช้คำสั่ง `read_next_page()` หรือประยุกต์ใช้ Local RAG เพื่อดึงเฉพาะบริบทที่สำคัญมาตอบ
+
+---
+
+### 8. 🤖 LLM-Based Dynamic Tool Router (Semantic Tool Selection)
+- **คำอธิบาย**: ยกระดับระบบ Dynamic Tool Filtering จากเดิมที่ใช้ Keyword/Regex ไปเป็น **LLM-Based / Semantic Router** เพื่อวิเคราะห์ความตั้งใจของผู้ใช้ได้อย่างแม่นยำยิ่งขึ้น
+- **ฟีเจอร์หลัก**:
+  - ใช้ Fast Small Model (SLM ขนาด 1B-3B) หรือ Embedding Vector Similarity ในการทำนายและคัดเลือก Tools ที่จำเป็น 3–5 ตัวก่อนส่งเข้า Main LLM
+  - รองรับคำสั่งที่มีความหมายแฝง (Implicit Intents) หรือการอธิบายแบบเปรียบเปรยที่ไม่มีคีย์เวิร์ดตรงตัว
+  - สลับและจัดกลุ่มชุดเครื่องมือ (Dynamic Tool Binding) ได้อย่างชาญฉลาดโดยไม่เกิดปัญหา Tool Schema Overload
