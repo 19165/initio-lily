@@ -32,10 +32,10 @@ def _get_safe_note_path(title: str) -> str:
 
 @tool
 def create_or_update_note(title: str, content: str) -> str:
-    """Create a new local Markdown note or overwrite an existing one.
+    """Create a new local Markdown note in the 'notes/' directory or overwrite an existing one.
 
     Args:
-        title: Title or filename of the note (e.g. 'Project Ideas', 'Weekly Review').
+        title: Title or filename of the note (e.g. 'Project Ideas', 'Weekly Review'). The note will be saved in the 'notes/' directory.
         content: Full Markdown formatted text content to save.
     """
     try:
@@ -45,17 +45,22 @@ def create_or_update_note(title: str, content: str) -> str:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content.strip())
 
-        return f"Successfully saved note '{filename}' ({len(content)} characters)."
+        try:
+            rel_path = os.path.relpath(file_path, os.getcwd()).replace("\\", "/")
+        except Exception:
+            rel_path = f"notes/{filename}"
+
+        return f"Successfully saved note '{filename}' to '{rel_path}' ({len(content)} characters)."
     except Exception as e:
         return f"Failed to save note: {e}"
 
 
 @tool
 def append_to_note(title: str, content: str) -> str:
-    """Append new text/entry to an existing Markdown note (or create one if it doesn't exist).
+    """Append new text/entry to an existing Markdown note in the 'notes/' directory (or create one if it doesn't exist).
 
     Args:
-        title: Title or filename of the note.
+        title: Title or filename of the note in the 'notes/' directory.
         content: Text content to append to the note.
     """
     try:
@@ -73,14 +78,19 @@ def append_to_note(title: str, content: str) -> str:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_content)
 
-        return f"Successfully appended to note '{filename}'. Total length: {len(new_content)} characters."
+        try:
+            rel_path = os.path.relpath(file_path, os.getcwd()).replace("\\", "/")
+        except Exception:
+            rel_path = f"notes/{filename}"
+
+        return f"Successfully appended to note '{filename}' at '{rel_path}'. Total length: {len(new_content)} characters."
     except Exception as e:
         return f"Failed to append to note: {e}"
 
 
 @tool
 def read_note(title: str) -> str:
-    """Read the full content of a local Markdown note by title.
+    """Read the full content of a local Markdown note from the 'notes/' directory by title.
 
     Args:
         title: Title or filename of the note to read.

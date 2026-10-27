@@ -36,8 +36,16 @@ TOOL_EXEC_MAX_CHARS = int(os.getenv("TOOL_EXEC_MAX_CHARS", "5000"))
 TOOL_EXEC_TIMEOUT_SEC = int(os.getenv("TOOL_EXEC_TIMEOUT_SEC", "15"))
 TOOL_IMAGE_MAX_DIMENSION = int(os.getenv("TOOL_IMAGE_MAX_DIMENSION", "1120"))
 
+# Project Root Directory
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 # Local Notes Knowledge Base
-NOTES_DIR = os.getenv("NOTES_DIR", "notes")
+_raw_notes_dir = os.getenv("NOTES_DIR", "notes")
+NOTES_DIR = (
+    _raw_notes_dir
+    if os.path.isabs(_raw_notes_dir)
+    else os.path.abspath(os.path.join(PROJECT_ROOT, _raw_notes_dir))
+)
 
 
 BASE_SYSTEM_PROMPT = (
