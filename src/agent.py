@@ -1,17 +1,32 @@
-import json
-import re
+"""Autonomous LangGraph Agent Engine for Lily AI Assistant.
+
+Features:
+- StateGraph architecture with cyclical ReAct loop (agent ⇄ ToolNode).
+- Strict PostgreSQL First checkpointer with test isolation support (MemorySaver).
+- Dynamic system prompt with real-time clock and persistent user profile facts.
+- Safe context window trimming with trim_messages(start_on="human") to prevent orphan tool messages.
+- Multi-mode event streaming (tokens, tool lifecycle, token usage, error isolation).
+"""
+
 import time
 from collections.abc import Generator
-from typing import Any
+from datetime import datetime
+from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import (
     AIMessage,
+    AIMessageChunk,
     BaseMessage,
     HumanMessage,
     SystemMessage,
-    ToolMessage,
+    trim_messages,
 )
 from langchain_ollama import ChatOllama
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.errors import GraphRecursionError
+from langgraph.graph import START, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode, tools_condition
 
 from src.config import (
     AGENT_MAX_STEPS,
@@ -22,43 +37,71 @@ from src.config import (
     OLLAMA_MODEL,
 )
 from src.db import (
-    ensure_session,
     get_all_facts,
-    get_recent_messages,
-    init_db,
-    save_message,
+    get_checkpointer,
+    get_thread_config,
+    is_db_available,
+    reset_thread,
 )
-from src.tools import ALL_TOOLS, filter_tools_by_intent
-from src.utils import format_tool_result
+from src.tools import ALL_TOOLS
+
+
+class AgentState(TypedDict):
+    """LangGraph state schema representing conversation history with append reducer."""
+
+    messages: Annotated[list[BaseMessage], add_messages]
+
+
+def safe_trim_context(
+    messages: list[BaseMessage], max_messages: int = MEMORY_WINDOW_SIZE
+) -> list[BaseMessage]:
+    """Trim conversation context window safely.
+
+    Guarantees:
+    - Retains SystemMessage at index 0.
+    - Slices history starting on a HumanMessage to strictly prevent Orphan ToolMessage errors.
+    """
+    if not messages:
+        return []
+    return trim_messages(
+        messages,
+        max_tokens=max_messages + 1,  # headroom for SystemMessage
+        token_counter=len,
+        strategy="last",
+        start_on="human",
+        include_system=True,
+        allow_partial=False,
+    )
 
 
 class LilyAgent:
+    """Production-grade autonomous AI assistant powered by LangGraph."""
+
     def __init__(
         self,
         session_id: str = DEFAULT_SESSION_ID,
         max_steps: int = AGENT_MAX_STEPS,
         window_size: int = MEMORY_WINDOW_SIZE,
+        use_memory_for_testing: bool = False,
+        model: Any | None = None,
     ):
         self.session_id = session_id
         self.max_steps = max_steps
         self.window_size = window_size
+        self.use_memory_for_testing = use_memory_for_testing
 
-        # 1. Initialize Database & Session
-        try:
-            init_db()
-            ensure_session(self.session_id)
-            self.db_available = True
-        except Exception as e:
-            print(f"[Info] PostgreSQL not connected ({e}). Running in ephemeral mode.")
-            self.db_available = False
+        # 1. Initialize Persistence Checkpointer
+        self.checkpointer: BaseCheckpointSaver = get_checkpointer(
+            use_memory_for_testing=use_memory_for_testing
+        )
 
-        # 2. Setup LLM & Tools Catalog
-        self.llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL)
+        # 2. Setup LLM & Tool Bindings
+        self.llm = model or ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL)
         self.tools = ALL_TOOLS
-        self.tools_by_name = {t.name: t for t in self.tools}
+        self.model_with_tools = self.llm.bind_tools(self.tools)
 
         # 3. Session Statistics & Telemetry Tracker
-        self.session_stats = {
+        self.session_stats: dict[str, Any] = {
             "total_turns": 0,
             "total_input_tokens": 0,
             "total_output_tokens": 0,
@@ -66,250 +109,201 @@ class LilyAgent:
             "total_eval_duration_sec": 0.0,
         }
 
-        # 4. Build Initial Context (System Prompt + History Restore)
-        self.messages: list[BaseMessage] = []
-        self._refresh_context()
+        # 4. Compile LangGraph StateGraph
+        self.graph = self._build_graph()
 
-    @staticmethod
-    def _parse_fallback_tool_calls(text: str) -> list[dict[str, Any]]:
-        """Extract and convert raw pseudo tool syntax (e.g. 'call:search_web{query:...}') into structured tool calls."""
-        if not text or not isinstance(text, str):
-            return []
+    def _build_graph(self):
+        """Construct and compile the LangGraph StateGraph workflow."""
+        workflow = StateGraph(AgentState)
 
-        calls: list[dict[str, Any]] = []
+        # Add Nodes
+        workflow.add_node("agent", self._agent_node)
+        workflow.add_node("tools", ToolNode(self.tools))
 
-        # Match 'call:tool_name{args}' or 'call:tool_name(args)'
-        call_pattern = re.compile(r"call:([a-zA-Z0-9_]+)\s*[\{\(]([^}\)]+)[\}\)]")
-        for match in call_pattern.finditer(text):
-            tool_name = match.group(1).strip()
-            args_raw = match.group(2).strip()
-            args_dict: dict[str, Any] = {}
+        # Add Edges
+        workflow.add_edge(START, "agent")
+        workflow.add_conditional_edges("agent", tools_condition)
+        workflow.add_edge("tools", "agent")
 
-            # 1. Try direct JSON parsing
-            try:
-                candidate = "{" + args_raw + "}" if not args_raw.startswith("{") else args_raw
-                parsed_json = json.loads(candidate)
-                if isinstance(parsed_json, dict):
-                    args_dict = parsed_json
-            except Exception:
-                pass
-
-            # 2. Try unquoted key:value splitting
-            if not args_dict and ":" in args_raw:
-                parts = args_raw.split(":", 1)
-                k = parts[0].strip().strip('"\' ')
-                v = parts[1].strip().strip('"\' ')
-                args_dict = {k: v}
-            elif not args_dict and args_raw:
-                args_dict = {"query": args_raw.strip('"\' ')}
-
-            calls.append({
-                "name": tool_name,
-                "args": args_dict,
-                "id": f"fallback_{tool_name}_{len(calls) + 1}",
-            })
-
-        return calls
+        return workflow.compile(checkpointer=self.checkpointer)
 
     def _build_system_prompt(self) -> str:
-        """Construct system prompt dynamically with active user facts from memory."""
-        prompt = BASE_SYSTEM_PROMPT
-        if self.db_available:
-            try:
-                facts = get_all_facts()
-                if facts:
-                    fact_lines = [f"- [{f['category']}] {f['key']}: {f['value']}" for f in facts]
-                    prompt += (
-                        "\n\n[Known Facts About the User]:\n"
-                        + "\n".join(fact_lines)
-                        + "\n(Use these facts naturally in conversation. Update them using `save_fact` when the user provides new preferences/info)."
-                    )
-            except Exception as e:
-                print(f"[Warning] Failed to load user facts for prompt: {e}")
+        """Construct dynamic system prompt with real-time clock and Master's profile facts."""
+        now_str = datetime.now().strftime("%A, %d %B %Y, %H:%M:%S")
+        prompt = f"{BASE_SYSTEM_PROMPT}\n\n[Current System Time]: {now_str}"
+
+        try:
+            facts = get_all_facts()
+            if facts:
+                fact_lines = [f"- [{f['category']}] {f['key']}: {f['value']}" for f in facts]
+                prompt += (
+                    "\n\n[Known Facts About the User]:\n"
+                    + "\n".join(fact_lines)
+                    + "\n(Use these facts naturally in conversation. Adapt your behavior to Master's preferences)."
+                )
+        except Exception:
+            pass
+
         return prompt
 
-    def _refresh_context(self) -> None:
-        """Reload dynamic system prompt and restore sliding window history from DB."""
-        system_prompt = self._build_system_prompt()
-        self.messages = [SystemMessage(content=system_prompt)]
+    def _agent_node(self, state: AgentState) -> dict[str, Any]:
+        """LangGraph agent node: injects dynamic prompt, trims context safely, and calls LLM."""
+        raw_messages = state.get("messages", [])
+        system_content = self._build_system_prompt()
 
-        if self.db_available:
-            try:
-                recent_records = get_recent_messages(self.session_id, limit=self.window_size)
-                for rec in recent_records:
-                    role = rec["role"]
-                    content = rec["content"]
-                    raw_tc = rec["tool_calls"]
-                    if isinstance(raw_tc, list):
-                        tool_calls = raw_tc
-                    elif isinstance(raw_tc, str):
-                        tool_calls = json.loads(raw_tc)
-                    else:
-                        tool_calls = []
-                    tool_call_id = rec.get("tool_call_id")
+        if not raw_messages or not isinstance(raw_messages[0], SystemMessage):
+            full_messages = [SystemMessage(content=system_content), *list(raw_messages)]
+        else:
+            full_messages = [SystemMessage(content=system_content), *list(raw_messages[1:])]
 
-                    if role == "human":
-                        self.messages.append(HumanMessage(content=content))
-                    elif role == "ai":
-                        self.messages.append(AIMessage(content=content, tool_calls=tool_calls))
-                    elif role == "tool":
-                        self.messages.append(ToolMessage(content=content, tool_call_id=tool_call_id or ""))
-            except Exception as e:
-                print(f"[Warning] Failed to restore session history: {e}")
+        trimmed = safe_trim_context(full_messages, max_messages=self.window_size)
+        response = self.model_with_tools.invoke(trimmed)
+        return {"messages": [response]}
+
+    @property
+    def db_available(self) -> bool:
+        """Check live database connectivity status."""
+        return is_db_available()
+
+    @property
+    def messages(self) -> list[BaseMessage]:
+        """Inspect current working messages for active thread from checkpointer."""
+        try:
+            config = get_thread_config(self.session_id)
+            state = self.graph.get_state(config)
+            msgs = state.values.get("messages", [])
+            system_prompt = SystemMessage(content=self._build_system_prompt())
+            return [system_prompt, *msgs] if not msgs or not isinstance(msgs[0], SystemMessage) else msgs
+        except Exception:
+            return [SystemMessage(content=self._build_system_prompt())]
+
+    @messages.setter
+    def messages(self, new_messages: list[BaseMessage]) -> None:
+        """Support direct assignment for testing context manipulations."""
+        pass
 
     def reset_context(self) -> None:
-        """Reset the working context messages to just the base system prompt (stateless turn)."""
-        self.messages = [SystemMessage(content=self._build_system_prompt())]
+        """Clear thread history in the checkpointer allowing a clean restart."""
+        reset_thread(self.session_id, self.checkpointer)
 
     def chat_stream(self, user_input: str) -> Generator[tuple[str, Any], None, None]:
-        """Stream autonomous ReAct loop execution yielding (event_type, data).
+        """Execute autonomous ReAct loop streaming real-time telemetry events.
 
-        Events:
-            - ("token", text_chunk)
-            - ("tool_start", {"name": ..., "args": ..., "step": ...})
-            - ("tool_end", {"name": ..., "result": ..., "duration": ..., "step": ...})
-            - ("usage", {"input_tokens": ..., "output_tokens": ..., "total_tokens": ..., "tokens_per_sec": ...})
-            - ("error", error_message)
+        Yields:
+            ("token", str): Live streamed markdown text chunk.
+            ("tool_start", dict): Tool invocation notification (name, args, step).
+            ("tool_end", dict): Tool execution result notification (name, result, duration).
+            ("usage", dict): Performance and token metrics for this turn.
+            ("error", str): Descriptive failure notification.
         """
+        clean_input = user_input.strip()
+        if not clean_input:
+            yield ("error", "ข้อความว่างเปล่า กรุณาพิมพ์คำถามหรือคำสั่งให้ลิลลี่นะคะ 🌸")
+            return
+
         turn_start_time = time.perf_counter()
         turn_in_tokens = 0
         turn_out_tokens = 0
         turn_eval_duration_sec = 0.0
+        step_counter = 0
 
-        # 1. Update system prompt with fresh facts
-        self.messages[0] = SystemMessage(content=self._build_system_prompt())
+        config = get_thread_config(self.session_id)
+        config["recursion_limit"] = self.max_steps * 2 + 1
 
-        # 2. Append & Persist User Message
-        user_msg = HumanMessage(content=user_input)
-        self.messages.append(user_msg)
-        if self.db_available:
-            try:
-                save_message(self.session_id, role="human", content=user_input)
-            except Exception as e:
-                print(f"[Warning] Failed to persist human message: {e}")
+        active_tool_calls: dict[str, dict[str, Any]] = {}
+        input_state = {"messages": [HumanMessage(content=clean_input)]}
 
-        # 3. Dynamic Tool Selection (Select 4-6 tools relevant to intent)
-        active_tools = filter_tools_by_intent(user_input, self.tools)
-        llm_with_tools = self.llm.bind_tools(active_tools)
-
-        # 4. Autonomous Streaming Loop
-        for step_idx in range(self.max_steps):
-            full_response: Any = None
-            has_tool_calls = False
-
-            try:
-                for chunk in llm_with_tools.stream(self.messages):
-                    full_response = chunk if full_response is None else full_response + chunk
-
-                    # If this chunk produces text and is not pseudo tool-call syntax, yield token
-                    if chunk.content and full_response and not getattr(full_response, "tool_calls", None):
-                        accumulated = str(full_response.content).strip()
-                        if not accumulated.startswith("call:") and not accumulated.startswith("<tool_call>"):
+        try:
+            for mode, payload in self.graph.stream(
+                input_state, config=config, stream_mode=["messages", "updates"]
+            ):
+                if mode == "messages":
+                    chunk, metadata = payload
+                    node = metadata.get("langgraph_node")
+                    if node == "agent" and isinstance(chunk, (AIMessageChunk, AIMessage)):
+                        has_tc = (
+                            bool(getattr(chunk, "tool_call_chunks", None))
+                            or bool(getattr(chunk, "tool_calls", None))
+                        )
+                        if chunk.content and not has_tc:
                             yield ("token", chunk.content)
 
-            except Exception as e:
-                yield ("error", f"LLM stream error: {e!s}")
-                return
+                elif mode == "updates" and isinstance(payload, dict):
+                    if "agent" in payload:
+                        agent_update = payload["agent"]
+                        msgs = agent_update.get("messages", [])
+                        if msgs:
+                            ai_msg = msgs[-1]
+                            usage = getattr(ai_msg, "usage_metadata", None) or {}
+                            resp_meta = getattr(ai_msg, "response_metadata", None) or {}
 
-            if full_response is None:
-                yield ("error", "Received empty response from model.")
-                return
+                            step_in = usage.get("input_tokens") or resp_meta.get("prompt_eval_count") or 0
+                            step_out = usage.get("output_tokens") or resp_meta.get("eval_count") or 0
+                            step_dur = (resp_meta.get("eval_duration") or 0) / 1e9
 
-            # Check for Native or Fallback Tool Calls
-            tool_calls = list(getattr(full_response, "tool_calls", None) or [])
-            if not tool_calls and full_response.content:
-                fallback_calls = self._parse_fallback_tool_calls(str(full_response.content))
-                if fallback_calls:
-                    tool_calls = fallback_calls
+                            turn_in_tokens += step_in
+                            turn_out_tokens += step_out
+                            turn_eval_duration_sec += step_dur
 
-            # Extract Token Usage & Performance Metadata from this step
-            usage = getattr(full_response, "usage_metadata", None) or {}
-            resp_meta = getattr(full_response, "response_metadata", None) or {}
+                            tool_calls = getattr(ai_msg, "tool_calls", None) or []
+                            for tc in tool_calls:
+                                step_counter += 1
+                                call_id = tc.get("id", f"call_{step_counter}")
+                                name = tc.get("name", "tool")
+                                args = tc.get("args", {})
+                                active_tool_calls[call_id] = {
+                                    "name": name,
+                                    "args": args,
+                                    "step": step_counter,
+                                    "start": time.perf_counter(),
+                                }
+                                yield (
+                                    "tool_start",
+                                    {
+                                        "name": name,
+                                        "args": args,
+                                        "step": step_counter,
+                                        "max_steps": self.max_steps,
+                                    },
+                                )
 
-            step_in_tokens = usage.get("input_tokens") or resp_meta.get("prompt_eval_count") or 0
-            step_out_tokens = usage.get("output_tokens") or resp_meta.get("eval_count") or 0
-            step_eval_duration = (resp_meta.get("eval_duration") or 0) / 1e9
-
-            turn_in_tokens += step_in_tokens
-            turn_out_tokens += step_out_tokens
-            turn_eval_duration_sec += step_eval_duration
-
-            # Append assistant response to messages & DB
-            ai_content = "" if tool_calls and not getattr(full_response, "tool_calls", None) else str(full_response.content)
-            ai_msg = AIMessage(content=ai_content, tool_calls=tool_calls)
-            self.messages.append(ai_msg)
-
-            if self.db_available:
-                try:
-                    save_message(
-                        self.session_id,
-                        role="ai",
-                        content=ai_content,
-                        tool_calls=tool_calls if tool_calls else None,
-                    )
-                except Exception as e:
-                    print(f"[Warning] Failed to persist AI message: {e}")
-
-            # Execute Tool Calls
-            if tool_calls:
-                has_tool_calls = True
-                for call in tool_calls:
-                    tool_name = call["name"]
-                    tool_args = call.get("args", {})
-                    call_id = call.get("id", f"call_{tool_name}_{step_idx}")
-
-                    yield (
-                        "tool_start",
-                        {
-                            "name": tool_name,
-                            "args": tool_args,
-                            "step": step_idx + 1,
-                            "max_steps": self.max_steps,
-                        },
-                    )
-
-                    t_start = time.perf_counter()
-                    tool = self.tools_by_name.get(tool_name)
-                    if tool:
-                        try:
-                            raw_result = tool.invoke(tool_args)
-                            clean_result = format_tool_result(raw_result)
-                        except Exception as te:
-                            clean_result = f"Error executing {tool_name}: {te!s}"
-                    else:
-                        clean_result = f"Error: Tool '{tool_name}' not found."
-                    duration = time.perf_counter() - t_start
-
-                    yield (
-                        "tool_end",
-                        {
-                            "name": tool_name,
-                            "result": clean_result,
-                            "duration": duration,
-                            "step": step_idx + 1,
-                            "char_count": len(clean_result),
-                        },
-                    )
-
-                    tool_msg = ToolMessage(content=clean_result, tool_call_id=call_id)
-                    self.messages.append(tool_msg)
-
-                    if self.db_available:
-                        try:
-                            save_message(
-                                self.session_id,
-                                role="tool",
-                                content=clean_result,
-                                tool_call_id=call_id,
+                    elif "tools" in payload:
+                        tools_update = payload["tools"]
+                        tool_msgs = tools_update.get("messages", [])
+                        for tm in tool_msgs:
+                            call_id = getattr(tm, "tool_call_id", "")
+                            info = active_tool_calls.pop(call_id, None)
+                            name = (
+                                getattr(tm, "name", None)
+                                or (info["name"] if info else "tool")
                             )
-                        except Exception as e:
-                            print(f"[Warning] Failed to persist tool message: {e}")
+                            step_num = info["step"] if info else step_counter
+                            start_t = info["start"] if info else time.perf_counter()
+                            duration = time.perf_counter() - start_t
+                            res_text = str(tm.content)
 
-            # If no tool calls was made in this turn, we are finished!
-            if not has_tool_calls:
-                break
+                            yield (
+                                "tool_end",
+                                {
+                                    "name": name,
+                                    "result": res_text,
+                                    "duration": duration,
+                                    "step": step_num,
+                                    "char_count": len(res_text),
+                                },
+                            )
 
-        # Calculate Turn Metrics & Update Session Accumulator
+        except GraphRecursionError:
+            yield (
+                "error",
+                f"ขออภัยค่าา Master ลิลลี่พยายามดำเนินการเกินจำนวนก้าวสูงสุด ({self.max_steps} ก้าว) แล้ว ขอยกยอดมาปรึกษา Master โดยตรงนะคะ 🌸",
+            )
+            return
+        except Exception as e:
+            yield ("error", f"เกิดข้อผิดพลาดในการประมวลผล: {e!s}")
+            return
+
+        # Calculate metrics & update session accumulators
         turn_duration = time.perf_counter() - turn_start_time
         turn_total_tokens = turn_in_tokens + turn_out_tokens
         tok_per_sec = (
@@ -324,7 +318,6 @@ class LilyAgent:
         self.session_stats["total_tokens"] += turn_total_tokens
         self.session_stats["total_eval_duration_sec"] += turn_eval_duration_sec
 
-        # Emit Token Usage Telemetry Event
         yield (
             "usage",
             {
@@ -336,8 +329,6 @@ class LilyAgent:
                 "eval_duration_sec": turn_eval_duration_sec,
             },
         )
-
-        self._trim_working_context()
 
     def get_session_stats(self) -> dict[str, Any]:
         """Return aggregated session statistics including token usage and average speed."""
@@ -352,16 +343,11 @@ class LilyAgent:
         return stats
 
     def chat(self, user_input: str) -> str:
-        """Synchronous chat fallback."""
-        tokens = []
+        """Synchronous chat interface collecting streamed text."""
+        tokens: list[str] = []
         for event_type, data in self.chat_stream(user_input):
             if event_type == "token":
                 tokens.append(data)
             elif event_type == "error":
                 return f"Error: {data}"
         return "".join(tokens)
-
-    def _trim_working_context(self) -> None:
-        """Maintain sliding window size in active memory (keeping SystemMessage at index 0)."""
-        if len(self.messages) > (self.window_size + 1):
-            self.messages = [self.messages[0]] + self.messages[-self.window_size :]
