@@ -47,11 +47,11 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 2.2 Verify persistent Long-term Memory (`user_facts` table CRUD) in `src/db.py` for cross-session Master profile facts
   - [x] 2.3 Provide thread/session helpers (`get_thread_config`, `reset_thread`) for LangGraph state management and thread isolation
   - [x] 2.4 Update unit tests in `tests/test_db.py` covering checkpointer lifecycle, thread configuration, and user facts CRUD operations
-- [ ] 3.0 Build LangGraph Agent Engine & Event Streaming (src/agent)
-  - [ ] 3.1 Define `AgentState` TypedDict, dynamic system prompt builder (injecting real-time timestamp & user facts), and safe context trimmer
-  - [ ] 3.2 Build and compile LangGraph `StateGraph` (`agent` node -> `tools_condition` -> `ToolNode`) with checkpointer and recursion limits
-  - [ ] 3.3 Implement `chat_stream(user_input)` generator adapting LangGraph stream events into standardized telemetry events (`token`, `tool_start`, `tool_end`, `usage`, `error`)
-  - [ ] 3.4 Update unit tests in `tests/test_agent.py` for LangGraph transitions, context trimming, and event streaming
+- [x] 3.0 Build LangGraph Agent Engine & Event Streaming (src/agent)
+  - [x] 3.1 Define `AgentState` TypedDict, dynamic system prompt builder (injecting real-time timestamp & user facts), and safe context trimmer
+  - [x] 3.2 Build and compile LangGraph `StateGraph` (`agent` node -> `tools_condition` -> `ToolNode`) with checkpointer and recursion limits
+  - [x] 3.3 Implement `chat_stream(user_input)` generator adapting LangGraph stream events into standardized telemetry events (`token`, `tool_start`, `tool_end`, `usage`, `error`)
+  - [x] 3.4 Update unit tests in `tests/test_agent.py` for LangGraph transitions, context trimming, and event streaming
 - [ ] 4.0 Modernize Harness & GAIA Benchmark Evaluator (src/gaia_evaluator)
   - [ ] 4.1 Update `GAIABenchmarkAgent` with unique thread isolation per evaluation run and align prompts to the 3 Super Tools
   - [ ] 4.2 Build step-by-step trajectory recorder tracking tool call arguments, outputs, execution duration, and token metrics
