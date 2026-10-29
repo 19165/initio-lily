@@ -42,11 +42,11 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 1.4 Refactor `src/tools/notes.py` into a unified `workspace_notes` tool supporting 5 actions (`read`, `write`, `append`, `list`, `search`) with strict `notes/` directory jail
   - [x] 1.5 Delete legacy tool files (`todoist.py`, `filter.py`, `system.py`, `memory.py`, `benchmark.py`) and export only `ALL_TOOLS = [web_search, python_interpreter, workspace_notes]` in `src/tools/__init__.py`
   - [x] 1.6 Update unit tests in `tests/test_tools.py` (retiring `test_tool_filter.py`) covering 3 Super Tools, external resource contract tests (Tavily API payloads, LLM JSON schemas, Subprocess UTF-8), and defensive edge cases
-- [ ] 2.0 Implement Dual-Layer Memory & Resilient Checkpointer (src/db)
-  - [ ] 2.1 Implement `get_checkpointer()` in `src/db.py` utilizing `PostgresSaver` with fail-fast diagnostics in production, and `MemorySaver` for unit testing
-  - [ ] 2.2 Verify persistent Long-term Memory (`user_facts` table CRUD) in `src/db.py` for cross-session Master profile facts
-  - [ ] 2.3 Provide thread/session helpers (`get_thread_config`, `reset_thread`) for LangGraph state management and thread isolation
-  - [ ] 2.4 Update unit tests in `tests/test_db.py` covering checkpointer lifecycle, thread configuration, and user facts CRUD operations
+- [x] 2.0 Implement Dual-Layer Memory & Resilient Checkpointer (src/db)
+  - [x] 2.1 Implement `get_checkpointer()` in `src/db.py` utilizing `PostgresSaver` with fail-fast diagnostics in production, and `MemorySaver` for unit testing
+  - [x] 2.2 Verify persistent Long-term Memory (`user_facts` table CRUD) in `src/db.py` for cross-session Master profile facts
+  - [x] 2.3 Provide thread/session helpers (`get_thread_config`, `reset_thread`) for LangGraph state management and thread isolation
+  - [x] 2.4 Update unit tests in `tests/test_db.py` covering checkpointer lifecycle, thread configuration, and user facts CRUD operations
 - [ ] 3.0 Build LangGraph Agent Engine & Event Streaming (src/agent)
   - [ ] 3.1 Define `AgentState` TypedDict, dynamic system prompt builder (injecting real-time timestamp & user facts), and safe context trimmer
   - [ ] 3.2 Build and compile LangGraph `StateGraph` (`agent` node -> `tools_condition` -> `ToolNode`) with checkpointer and recursion limits
