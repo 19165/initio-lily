@@ -41,7 +41,17 @@ CRITICAL BENCHMARK RULES:
    - Use `web_search` for:
      * Looking up real-world facts, current information, and extracting web page content via URLs.
    - Use `workspace_notes` if you need a persistent scratchpad for multi-step reasoning.
-3. Think step-by-step and verify your calculations before giving the final answer."""
+3. Think step-by-step and verify your calculations before giving the final answer.
+4. Universal Information Satiation (Halt upon Candidate Evidence):
+   - As soon as you discover candidate evidence or extract a factual answer from a tool output, you MUST HALT all further tool calls immediately.
+   - Do NOT execute redundant cross-checks or repetitive searches once the required information is located.
+   - Synthesize and output the final exact-match answer directly in the very next step.
+5. Zero-Overhead Direct Path:
+   - When an Attached File path is provided in the prompt, inspect that exact path directly.
+   - You are STRICTLY FORBIDDEN from executing exploratory directory listing (`os.walk`, `os.listdir`, `glob`) to search for other files.
+6. Early-Exit on Hard Limitations:
+   - If a task requires specialized external system libraries, hardware, or codecs that are unavailable in the Python environment (e.g. missing audio/video decoders, unresolvable OS dependencies), do NOT attempt iterative workarounds.
+   - Immediately conclude your reasoning and formulate your best plausible final estimate from the prompt context alone."""
 
 
 def sanitize_gaia_answer(text: str) -> str:
@@ -148,7 +158,10 @@ class GAIABenchmarkAgent:
         if resolved_file:
             prompt += (
                 f"Attached File Context: You have access to a local file at '{resolved_file}'. "
-                "You can inspect, read, and process it using the `python_interpreter` tool.\n\n"
+                "You can inspect, read, and process it using the `python_interpreter` tool.\n"
+                "[DIRECTIVE: ZERO-OVERHEAD DIRECT PATH]\n"
+                "- Open and inspect this exact file path directly in `python_interpreter` on your very first step.\n"
+                "- You are STRICTLY FORBIDDEN from executing exploratory directory listing (`os.walk`, `os.listdir`, `glob`) to search for other files.\n\n"
             )
         elif file_name:
             prompt += (

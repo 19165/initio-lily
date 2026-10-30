@@ -5,7 +5,11 @@ import tempfile
 
 from langchain_core.messages import AIMessage, BaseMessage
 
-from src.gaia_evaluator import GAIABenchmarkAgent, sanitize_gaia_answer
+from src.gaia_evaluator import (
+    GAIA_SYSTEM_PROMPT,
+    GAIABenchmarkAgent,
+    sanitize_gaia_answer,
+)
 
 
 class MockChatModel:
@@ -186,3 +190,45 @@ class TestGAIABenchmarkAgentExecution:
 
         assert res1 == "Paris"
         assert res2 == "Tokyo"
+
+    def test_gaia_system_prompt_meta_cognitive_directives(self):
+        assert "Universal Information Satiation" in GAIA_SYSTEM_PROMPT
+        assert "HALT all further tool calls immediately" in GAIA_SYSTEM_PROMPT
+        assert "Zero-Overhead Direct Path" in GAIA_SYSTEM_PROMPT
+        assert "Early-Exit on Hard Limitations" in GAIA_SYSTEM_PROMPT
+
+    def test_attached_file_prompt_injection_contains_direct_path_directive(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as f:
+            f.write("col1,col2\n1,2\n")
+            temp_path = f.name
+
+        try:
+            captured_prompts: list[str] = []
+
+            class SpyModel(MockChatModel):
+                def invoke(self, messages: list[BaseMessage], **kwargs: object) -> AIMessage:
+                    for m in messages:
+                        if hasattr(m, "content"):
+                            captured_prompts.append(str(m.content))
+                    return AIMessage(content="42")
+
+            spy_model = SpyModel([AIMessage(content="42")])
+            evaluator = GAIABenchmarkAgent(
+                max_steps=2,
+                verbose=False,
+                model=spy_model,
+                use_memory_for_testing=True,
+            )
+
+            res = evaluator(
+                "Find sum in CSV",
+                file_path=temp_path,
+                task_id="task_direct_path_1",
+            )
+            assert res == "42"
+            combined_prompt = " ".join(captured_prompts)
+            assert "[DIRECTIVE: ZERO-OVERHEAD DIRECT PATH]" in combined_prompt
+            assert "STRICTLY FORBIDDEN from executing exploratory directory listing" in combined_prompt
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)

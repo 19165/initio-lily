@@ -36,11 +36,11 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 2.2 Add per-turn query cache and interceptor hook in `src/agent.py` prior to executing external search tool calls
   - [x] 2.3 Construct synthetic feedback message (`[SYSTEM DEDUPLICATION NOTICE]`) commanding the model to halt repetition and pivot strategy
   - [x] 2.4 Update unit tests in `tests/test_agent.py` and `tests/test_utils.py` verifying exact & fuzzy deduplication interception without invoking live APIs
-- [ ] 3.0 Universal Meta-Cognitive Prompting & Early-Exit Protocol in GAIA Evaluator
-  - [ ] 3.1 Formulate and integrate Universal Information Satiation directive (halt immediately upon locating first candidate evidence) in `GAIA_SYSTEM_PROMPT` (`src/gaia_evaluator.py`)
-  - [ ] 3.2 Add Zero-Overhead Direct Path directive in `src/gaia_evaluator.py` strictly forbidding exploratory `os.walk` / `os.listdir` loops when attached files are provided
-  - [ ] 3.3 Implement Early-Exit directive instructing the agent to immediately conclude when encountering unresolvable environment limits (e.g. missing audio/video libraries)
-  - [ ] 3.4 Update unit and integration tests in `tests/test_gaia_evaluator.py` verifying direct path prompt injection, stopping directives, and early termination behavior
+- [x] 3.0 Universal Meta-Cognitive Prompting & Early-Exit Protocol in GAIA Evaluator
+  - [x] 3.1 Formulate and integrate Universal Information Satiation directive (halt immediately upon locating first candidate evidence) in `GAIA_SYSTEM_PROMPT` (`src/gaia_evaluator.py`)
+  - [x] 3.2 Add Zero-Overhead Direct Path directive in `src/gaia_evaluator.py` strictly forbidding exploratory `os.walk` / `os.listdir` loops when attached files are provided
+  - [x] 3.3 Implement Early-Exit directive instructing the agent to immediately conclude when encountering unresolvable environment limits (e.g. missing audio/video libraries)
+  - [x] 3.4 Update unit and integration tests in `tests/test_gaia_evaluator.py` verifying direct path prompt injection, stopping directives, and early termination behavior
 - [ ] 4.0 Accurate Token Telemetry on Interrupted Steps
   - [ ] 4.1 Update `LilyAgent.chat_stream()` in `src/agent.py` to yield accumulated partial token usage metrics inside `except GraphRecursionError:` prior to error event
   - [ ] 4.2 Update `session_stats` accumulators in `LilyAgent` to capture interrupted turn consumption, ensuring session analytics reflect reality
