@@ -57,8 +57,8 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 4.2 Build step-by-step trajectory recorder tracking tool call arguments, outputs, execution duration, and token metrics
   - [x] 4.3 Enhance exact-match final answer sanitizer to eliminate formatting artifacts and Markdown conversational noise
   - [x] 4.4 Update unit tests in `tests/test_gaia_evaluator.py` covering mock evaluation runs, trajectory generation, and file resolver
-- [ ] 5.0 Presentation Layer Integration & Legacy Cleanup (main.py & root files)
-  - [ ] 5.1 Remove obsolete legacy files (`agent.py`, `src/tools/filter.py`, `tests/test_tool_filter.py`) and clean up empty directories
-  - [ ] 5.2 Update `main.py` Rich CLI interface with updated slash commands and LangGraph stream event handlers
-  - [ ] 5.3 Verify `app.py` Gradio interface compatibility with the updated LangGraph agent
-  - [ ] 5.4 Run full test suite (`uv run pytest`) and linting (`uv run ruff check .`) to verify 100% green build
+- [x] 5.0 Presentation Layer Integration & Legacy Cleanup (main.py & root files)
+  - [x] 5.1 Clean up obsolete legacy stubs in `src/tools/__init__.py` and preserve clean `agent.py` root bridge for Hugging Face Space
+  - [x] 5.2 Update `main.py` Rich CLI interface with updated slash commands and LangGraph stream event handlers
+  - [x] 5.3 Verify `app.py` Gradio interface compatibility with the updated LangGraph agent and resolve Ruff lints
+  - [x] 5.4 Run full test suite (`uv run pytest`) and linting (`uv run ruff check .`) to verify 100% green build
