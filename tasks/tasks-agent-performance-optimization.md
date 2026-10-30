@@ -45,8 +45,8 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 4.1 Update `LilyAgent.chat_stream()` in `src/agent.py` to yield accumulated partial token usage metrics inside `except GraphRecursionError:` prior to error event
   - [x] 4.2 Update `session_stats` accumulators in `LilyAgent` to capture interrupted turn consumption, ensuring session analytics reflect reality
   - [x] 4.3 Update unit tests in `tests/test_agent.py` verifying that recursion-limited runs still emit non-zero `usage` events with accurate token counts
-- [ ] 5.0 End-to-End Verification & Benchmark Regression Testing
-  - [ ] 5.1 Run full regression test suite (`uv run pytest`) and linting check (`uv run ruff check .`) ensuring 100% green build
-  - [ ] 5.2 Execute representative benchmark tasks and verify reduction of search steps and token usage in `logging.csv`
-  - [ ] 5.3 Document optimizations, telemetry before/after comparison, and empirical findings in `walkthrough.md`
-  - [ ] 5.4 Commit and push all changes following conventional commit standards to feature branch
+- [x] 5.0 End-to-End Verification & Benchmark Regression Testing
+  - [x] 5.1 Run full regression test suite (`uv run pytest`) and linting check (`uv run ruff check .`) ensuring 100% green build
+  - [x] 5.2 Execute representative benchmark tasks and verify reduction of search steps and token usage in `logging.csv`
+  - [x] 5.3 Document optimizations, telemetry before/after comparison, and empirical findings in `walkthrough.md`
+  - [x] 5.4 Commit and push all changes following conventional commit standards to feature branch
