@@ -84,11 +84,15 @@ class LilyAgent:
         window_size: int = MEMORY_WINDOW_SIZE,
         use_memory_for_testing: bool = False,
         model: Any | None = None,
+        system_prompt: str | None = None,
+        enable_user_facts: bool = True,
     ):
         self.session_id = session_id
         self.max_steps = max_steps
         self.window_size = window_size
         self.use_memory_for_testing = use_memory_for_testing
+        self.custom_system_prompt = system_prompt
+        self.enable_user_facts = enable_user_facts
 
         # 1. Initialize Persistence Checkpointer
         self.checkpointer: BaseCheckpointSaver = get_checkpointer(
@@ -129,20 +133,22 @@ class LilyAgent:
 
     def _build_system_prompt(self) -> str:
         """Construct dynamic system prompt with real-time clock and Master's profile facts."""
+        base_prompt = self.custom_system_prompt or BASE_SYSTEM_PROMPT
         now_str = datetime.now().strftime("%A, %d %B %Y, %H:%M:%S")
-        prompt = f"{BASE_SYSTEM_PROMPT}\n\n[Current System Time]: {now_str}"
+        prompt = f"{base_prompt}\n\n[Current System Time]: {now_str}"
 
-        try:
-            facts = get_all_facts()
-            if facts:
-                fact_lines = [f"- [{f['category']}] {f['key']}: {f['value']}" for f in facts]
-                prompt += (
-                    "\n\n[Known Facts About the User]:\n"
-                    + "\n".join(fact_lines)
-                    + "\n(Use these facts naturally in conversation. Adapt your behavior to Master's preferences)."
-                )
-        except Exception:
-            pass
+        if self.enable_user_facts:
+            try:
+                facts = get_all_facts()
+                if facts:
+                    fact_lines = [f"- [{f['category']}] {f['key']}: {f['value']}" for f in facts]
+                    prompt += (
+                        "\n\n[Known Facts About the User]:\n"
+                        + "\n".join(fact_lines)
+                        + "\n(Use these facts naturally in conversation. Adapt your behavior to Master's preferences)."
+                    )
+            except Exception:
+                pass
 
         return prompt
 
