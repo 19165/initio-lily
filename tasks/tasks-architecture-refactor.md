@@ -52,11 +52,11 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 3.2 Build and compile LangGraph `StateGraph` (`agent` node -> `tools_condition` -> `ToolNode`) with checkpointer and recursion limits
   - [x] 3.3 Implement `chat_stream(user_input)` generator adapting LangGraph stream events into standardized telemetry events (`token`, `tool_start`, `tool_end`, `usage`, `error`)
   - [x] 3.4 Update unit tests in `tests/test_agent.py` for LangGraph transitions, context trimming, and event streaming
-- [ ] 4.0 Modernize Harness & GAIA Benchmark Evaluator (src/gaia_evaluator)
-  - [ ] 4.1 Update `GAIABenchmarkAgent` with unique thread isolation per evaluation run and align prompts to the 3 Super Tools
-  - [ ] 4.2 Build step-by-step trajectory recorder tracking tool call arguments, outputs, execution duration, and token metrics
-  - [ ] 4.3 Enhance exact-match final answer sanitizer to eliminate formatting artifacts and Markdown conversational noise
-  - [ ] 4.4 Update unit tests in `tests/test_gaia_evaluator.py` covering mock evaluation runs, trajectory generation, and file resolver
+- [x] 4.0 Modernize Harness & GAIA Benchmark Evaluator (src/gaia_evaluator)
+  - [x] 4.1 Update `GAIABenchmarkAgent` with unique thread isolation per evaluation run and align prompts to the 3 Super Tools
+  - [x] 4.2 Build step-by-step trajectory recorder tracking tool call arguments, outputs, execution duration, and token metrics
+  - [x] 4.3 Enhance exact-match final answer sanitizer to eliminate formatting artifacts and Markdown conversational noise
+  - [x] 4.4 Update unit tests in `tests/test_gaia_evaluator.py` covering mock evaluation runs, trajectory generation, and file resolver
 - [ ] 5.0 Presentation Layer Integration & Legacy Cleanup (main.py & root files)
   - [ ] 5.1 Remove obsolete legacy files (`agent.py`, `src/tools/filter.py`, `tests/test_tool_filter.py`) and clean up empty directories
   - [ ] 5.2 Update `main.py` Rich CLI interface with updated slash commands and LangGraph stream event handlers
