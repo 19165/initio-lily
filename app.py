@@ -41,6 +41,8 @@ for ls_key, lc_key in [
     if ls_key in os.environ and lc_key not in os.environ:
         os.environ[lc_key] = os.environ[ls_key]
 
+import json
+
 import gradio as gr
 import pandas as pd
 import requests
@@ -117,6 +119,7 @@ def run_and_submit_all(
 
     # 4. Run Agent
     results_log = []
+    step_logs = []
     answers_payload = []
     print("\n=======================================================")
     print(f"🚀 Starting GAIA Evaluation ({len(questions_data)} Tasks)")
@@ -152,10 +155,38 @@ def run_and_submit_all(
             duration = trace.get("duration", 0.0)
             tokens = trace.get("tokens", 0)
             steps = trace.get("steps", 1)
+            trajectory = trace.get("trajectory", [])
 
             print(
                 f"    🎯 Answer: '{submitted_answer}' (in {duration:.2f}s, {steps} steps, tools: [{tools_str}])"
             )
+
+            # Record step-by-step telemetry for logging.csv
+            if trajectory:
+                for step_info in trajectory:
+                    step_logs.append({
+                        "Task ID": task_id,
+                        "Level": level,
+                        "Step": step_info.get("step", 1),
+                        "Tool Name": step_info.get("tool", "unknown"),
+                        "Tool Arguments": json.dumps(
+                            step_info.get("args", {}), ensure_ascii=False
+                        ),
+                        "Result Snippet": step_info.get("result_snippet", ""),
+                        "Step Duration (s)": step_info.get("duration", 0.0),
+                        "Task Status": "Success",
+                    })
+            else:
+                step_logs.append({
+                    "Task ID": task_id,
+                    "Level": level,
+                    "Step": 1,
+                    "Tool Name": "Direct",
+                    "Tool Arguments": "-",
+                    "Result Snippet": submitted_answer,
+                    "Step Duration (s)": round(duration, 2),
+                    "Task Status": "Success",
+                })
 
             answers_payload.append(
                 {"task_id": task_id, "submitted_answer": submitted_answer}
@@ -171,6 +202,16 @@ def run_and_submit_all(
             })
         except Exception as e:
             print(f"    ❌ Error running agent on task {task_id}: {e}")
+            step_logs.append({
+                "Task ID": task_id,
+                "Level": level,
+                "Step": 1,
+                "Tool Name": "Error",
+                "Tool Arguments": "-",
+                "Result Snippet": str(e),
+                "Step Duration (s)": 0.0,
+                "Task Status": "Error",
+            })
             results_log.append({
                 "Task ID": task_id,
                 "Question": question_text,
@@ -182,6 +223,8 @@ def run_and_submit_all(
             })
 
     results_df = pd.DataFrame(results_log)
+    steps_df = pd.DataFrame(step_logs)
+
     if not answers_payload:
         print("Agent did not produce any answers to submit.")
         return "Agent did not produce any answers to submit.", results_df
@@ -189,9 +232,16 @@ def run_and_submit_all(
     # Always save answers to a local CSV file so they are not lost!
     try:
         results_df.to_csv("submission_log.csv", index=False)
-        print("\n💾 Saved detailed execution trace to submission_log.csv")
+        print("\n💾 Saved summary execution trace to submission_log.csv")
     except Exception as csv_err:
         print(f"Warning: Could not save submission_log.csv: {csv_err}")
+
+    # Save detailed step-by-step telemetry to logging.csv
+    try:
+        steps_df.to_csv("logging.csv", index=False)
+        print("💾 Saved granular step trajectory to logging.csv")
+    except Exception as log_err:
+        print(f"Warning: Could not save logging.csv: {log_err}")
 
     # 5. Prepare Submission
     submission_data = {
