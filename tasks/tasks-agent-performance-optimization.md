@@ -41,10 +41,10 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 3.2 Add Zero-Overhead Direct Path directive in `src/gaia_evaluator.py` strictly forbidding exploratory `os.walk` / `os.listdir` loops when attached files are provided
   - [x] 3.3 Implement Early-Exit directive instructing the agent to immediately conclude when encountering unresolvable environment limits (e.g. missing audio/video libraries)
   - [x] 3.4 Update unit and integration tests in `tests/test_gaia_evaluator.py` verifying direct path prompt injection, stopping directives, and early termination behavior
-- [ ] 4.0 Accurate Token Telemetry on Interrupted Steps
-  - [ ] 4.1 Update `LilyAgent.chat_stream()` in `src/agent.py` to yield accumulated partial token usage metrics inside `except GraphRecursionError:` prior to error event
-  - [ ] 4.2 Update `session_stats` accumulators in `LilyAgent` to capture interrupted turn consumption, ensuring session analytics reflect reality
-  - [ ] 4.3 Update unit tests in `tests/test_agent.py` verifying that recursion-limited runs still emit non-zero `usage` events with accurate token counts
+- [x] 4.0 Accurate Token Telemetry on Interrupted Steps
+  - [x] 4.1 Update `LilyAgent.chat_stream()` in `src/agent.py` to yield accumulated partial token usage metrics inside `except GraphRecursionError:` prior to error event
+  - [x] 4.2 Update `session_stats` accumulators in `LilyAgent` to capture interrupted turn consumption, ensuring session analytics reflect reality
+  - [x] 4.3 Update unit tests in `tests/test_agent.py` verifying that recursion-limited runs still emit non-zero `usage` events with accurate token counts
 - [ ] 5.0 End-to-End Verification & Benchmark Regression Testing
   - [ ] 5.1 Run full regression test suite (`uv run pytest`) and linting check (`uv run ruff check .`) ensuring 100% green build
   - [ ] 5.2 Execute representative benchmark tasks and verify reduction of search steps and token usage in `logging.csv`

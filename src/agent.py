@@ -374,6 +374,32 @@ class LilyAgent:
                             )
 
         except GraphRecursionError:
+            turn_duration = time.perf_counter() - turn_start_time
+            turn_total_tokens = turn_in_tokens + turn_out_tokens
+            tok_per_sec = (
+                turn_out_tokens / turn_eval_duration_sec
+                if turn_eval_duration_sec > 0
+                else 0.0
+            )
+
+            # Update session accumulators even on interrupted run
+            self.session_stats["total_turns"] += 1
+            self.session_stats["total_input_tokens"] += turn_in_tokens
+            self.session_stats["total_output_tokens"] += turn_out_tokens
+            self.session_stats["total_tokens"] += turn_total_tokens
+            self.session_stats["total_eval_duration_sec"] += turn_eval_duration_sec
+
+            yield (
+                "usage",
+                {
+                    "input_tokens": turn_in_tokens,
+                    "output_tokens": turn_out_tokens,
+                    "total_tokens": turn_total_tokens,
+                    "tokens_per_sec": tok_per_sec,
+                    "duration_sec": turn_duration,
+                    "eval_duration_sec": turn_eval_duration_sec,
+                },
+            )
             yield (
                 "error",
                 f"ขออภัยค่าา Master ลิลลี่พยายามดำเนินการเกินจำนวนก้าวสูงสุด ({self.max_steps} ก้าว) แล้ว ขอยกยอดมาปรึกษา Master โดยตรงนะคะ 🌸",

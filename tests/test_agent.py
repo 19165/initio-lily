@@ -208,7 +208,7 @@ class TestLangGraphAgentTransitions:
         assert usage["total_tokens"] == 48
 
     def test_recursion_limit_breaker(self):
-        # Infinite tool calling model
+        # Infinite tool calling model with token usage metadata
         mock_model = MockChatModel([
             AIMessage(
                 content="",
@@ -217,6 +217,11 @@ class TestLangGraphAgentTransitions:
                     "args": {"action": "list"},
                     "id": "call_loop",
                 }],
+                usage_metadata={
+                    "input_tokens": 15,
+                    "output_tokens": 5,
+                    "total_tokens": 20,
+                },
             )
         ])
         agent = LilyAgent(
@@ -229,7 +234,22 @@ class TestLangGraphAgentTransitions:
         events = list(agent.chat_stream("Infinite loop query"))
         event_types = [e[0] for e in events]
 
+        assert "usage" in event_types
         assert "error" in event_types
+        # Verify usage emitted before error
+        usage_idx = event_types.index("usage")
+        error_idx = event_types.index("error")
+        assert usage_idx < error_idx
+
+        usage_data = [e[1] for e in events if e[0] == "usage"][0]
+        assert usage_data["input_tokens"] >= 15
+        assert usage_data["output_tokens"] >= 5
+        assert usage_data["total_tokens"] >= 20
+
+        # Verify session stats updated on interrupted run
+        assert agent.session_stats["total_turns"] == 1
+        assert agent.session_stats["total_tokens"] >= 20
+
         error_msg = [e[1] for e in events if e[0] == "error"][0]
         assert "เกินจำนวนก้าวสูงสุด" in error_msg
 
