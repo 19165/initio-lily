@@ -1,6 +1,11 @@
 from unittest.mock import MagicMock
 
-from src.utils import clean_markdown_text, format_tool_result, retry_on_network_error
+from src.utils import (
+    calculate_jaccard_similarity,
+    clean_markdown_text,
+    format_tool_result,
+    retry_on_network_error,
+)
 
 
 class TestCleanMarkdownText:
@@ -84,3 +89,29 @@ class TestRetryOnNetworkError:
         assert "Error executing" in res
         assert "Bad value" in res
         assert mock_fn.call_count == 1
+
+
+class TestCalculateJaccardSimilarity:
+    def test_identical_queries(self):
+        assert calculate_jaccard_similarity("hello world", "hello world") == 1.0
+
+    def test_completely_different_queries(self):
+        assert calculate_jaccard_similarity("apple orange", "car bus airplane") == 0.0
+
+    def test_case_insensitive_and_word_order_insensitivity(self):
+        sim = calculate_jaccard_similarity("Malko winners list 1980", "1980 list winners malko")
+        assert sim == 1.0
+
+    def test_near_duplicate_high_threshold(self):
+        # 5 out of 6 words overlap -> 5/6 = 0.833 >= 0.75
+        sim = calculate_jaccard_similarity(
+            "Malko Competition 1980 first prize winner",
+            "Malko Competition 1980 first prize"
+        )
+        assert sim >= 0.75
+
+    def test_empty_or_none_inputs(self):
+        assert calculate_jaccard_similarity("", "test") == 0.0
+        assert calculate_jaccard_similarity("test", "") == 0.0
+        assert calculate_jaccard_similarity("", "") == 0.0
+

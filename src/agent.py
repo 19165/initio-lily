@@ -19,6 +19,7 @@ from langchain_core.messages import (
     BaseMessage,
     HumanMessage,
     SystemMessage,
+    ToolMessage,
     trim_messages,
 )
 from langchain_ollama import ChatOllama
@@ -44,6 +45,78 @@ from src.db import (
     reset_thread,
 )
 from src.tools import ALL_TOOLS
+from src.utils import calculate_jaccard_similarity
+
+
+class DeduplicatingToolNode(ToolNode):
+    """ToolNode wrapper that intercepts repetitive search queries to break infinite loops."""
+
+    def __init__(self, tools: list[Any]):
+        super().__init__(tools)
+        self.seen_search_queries: list[str] = []
+
+    def reset_query_cache(self) -> None:
+        """Clear query cache for fresh evaluation runs."""
+        self.seen_search_queries.clear()
+
+    def invoke(self, state: Any, config: Any = None) -> dict[str, list[ToolMessage]]:
+        """Intercept near-duplicate queries before external search API execution."""
+        messages = state.get("messages", []) if isinstance(state, dict) else []
+        if not messages:
+            return super().invoke(state, config)
+
+        last_msg = messages[-1]
+        tool_calls = getattr(last_msg, "tool_calls", []) or []
+
+        intercepted_messages: list[ToolMessage] = []
+        normal_calls: list[dict[str, Any]] = []
+
+        for tc in tool_calls:
+            name = tc.get("name", "")
+            args = tc.get("args", {}) or {}
+            call_id = tc.get("id", "")
+
+            if name in ["web_search", "search_web"]:
+                query = str(args.get("query", "")).strip()
+                is_duplicate = False
+
+                for prev_query in self.seen_search_queries:
+                    sim = calculate_jaccard_similarity(query, prev_query)
+                    if sim >= 0.75:
+                        is_duplicate = True
+                        break
+
+                if is_duplicate:
+                    notice = (
+                        "⚠️ [SYSTEM DEDUPLICATION NOTICE]:\n"
+                        f"You have already executed a near-identical search query (\"{query}\"). "
+                        "Repeating this search will waste your step budget.\n\n"
+                        "MANDATORY INSTRUCTION: You must radically pivot your approach: "
+                        "query an authoritative structured source (e.g. site:en.wikipedia.org \"...\"), "
+                        "use python_interpreter, or synthesize your final answer now from context."
+                    )
+                    intercepted_messages.append(
+                        ToolMessage(content=notice, tool_call_id=call_id, name=name)
+                    )
+                    continue
+                else:
+                    self.seen_search_queries.append(query)
+
+            normal_calls.append(tc)
+
+        # If all calls were intercepted, return synthetic observations immediately
+        if not normal_calls and intercepted_messages:
+            return {"messages": intercepted_messages}
+
+        # Otherwise execute any non-duplicate tool calls through standard ToolNode
+        last_msg_copy = last_msg.model_copy(update={"tool_calls": normal_calls})
+        sub_state = dict(state)
+        sub_state["messages"] = [*list(messages[:-1]), last_msg_copy]
+        res = super().invoke(sub_state, config)
+        res_msgs = res.get("messages", []) if isinstance(res, dict) else []
+
+        return {"messages": [*intercepted_messages, *list(res_msgs)]}
+
 
 
 class AgentState(TypedDict):
@@ -121,8 +194,9 @@ class LilyAgent:
         workflow = StateGraph(AgentState)
 
         # Add Nodes
+        self.tool_node = DeduplicatingToolNode(self.tools)
         workflow.add_node("agent", self._agent_node)
-        workflow.add_node("tools", ToolNode(self.tools))
+        workflow.add_node("tools", self.tool_node)
 
         # Add Edges
         workflow.add_edge(START, "agent")

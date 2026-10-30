@@ -157,3 +157,25 @@ def clean_markdown_text(text: str) -> str:
 
     return cleaned
 
+
+def calculate_jaccard_similarity(text1: str, text2: str) -> float:
+    """Calculate Jaccard token similarity between two text queries.
+
+    Returns float from 0.0 (completely distinct) to 1.0 (identical set of tokens).
+    Normalizes by lowercasing and splitting into alphanumeric word sets.
+    """
+    if not text1 or not text2:
+        return 0.0
+
+    tokens1 = set(re.findall(r"\w+", text1.lower()))
+    tokens2 = set(re.findall(r"\w+", text2.lower()))
+
+    if not tokens1 or not tokens2:
+        return 0.0
+
+    intersection = tokens1.intersection(tokens2)
+    union = tokens1.union(tokens2)
+
+    return len(intersection) / len(union)
+
+

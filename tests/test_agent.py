@@ -8,7 +8,7 @@ Tests verify:
 - Isolated execution using use_memory_for_testing=True.
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from langchain_core.messages import (
     AIMessage,
@@ -258,3 +258,61 @@ class TestAgentStreamingTelemetry:
             assert agent.db_available is True
         with patch("src.agent.is_db_available", return_value=False):
             assert agent.db_available is False
+
+
+class TestQueryDeduplicationInterception:
+    """Tests for DeduplicatingToolNode preventing near-duplicate searches."""
+
+    def test_deduplicating_tool_node_intercepts_near_duplicate(self):
+        from langgraph.graph import END, START, StateGraph
+
+        from src.agent import AgentState, DeduplicatingToolNode
+        from src.tools import ALL_TOOLS
+
+        node = DeduplicatingToolNode(ALL_TOOLS)
+        workflow = StateGraph(AgentState)
+        workflow.add_node("tools", node)
+        workflow.add_edge(START, "tools")
+        workflow.add_edge("tools", END)
+        app = workflow.compile()
+
+        # 1. First search call: passes normally to external tool
+        mock_tavily = MagicMock()
+        mock_tavily.search.return_value = {
+            "results": [{"title": "Result 1", "url": "https://example.com", "content": "Evidence"}]
+        }
+
+        with patch("src.tools.search.tavily_client", mock_tavily):
+            m1 = AIMessage(
+                content="",
+                tool_calls=[{
+                    "name": "web_search",
+                    "args": {"query": "Malko Competition winners list 1980"},
+                    "id": "c1",
+                }],
+            )
+            out1 = app.invoke({"messages": [m1]})
+            assert len(out1["messages"]) == 2  # [m1, ToolMessage]
+            tool_msg1 = out1["messages"][-1]
+            assert tool_msg1.name == "web_search"
+            assert "Evidence" in str(tool_msg1.content)
+            assert mock_tavily.search.call_count == 1
+
+        # 2. Second near-duplicate search call: intercepted without calling Tavily
+        with patch("src.tools.search.tavily_client", mock_tavily):
+            m2 = AIMessage(
+                content="",
+                tool_calls=[{
+                    "name": "web_search",
+                    "args": {"query": "1980 winners list Malko Competition"},
+                    "id": "c2",
+                }],
+            )
+            out2 = app.invoke({"messages": [m2]})
+            tool_msg2 = out2["messages"][-1]
+            assert tool_msg2.name == "web_search"
+            assert "[SYSTEM DEDUPLICATION NOTICE]" in str(tool_msg2.content)
+            assert "near-identical search query" in str(tool_msg2.content)
+            # Tavily should NOT be called again
+            assert mock_tavily.search.call_count == 1
+

@@ -31,11 +31,11 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 1.2 Tune `max_results` default to 3 in `web_search` and `WebSearchInput` schema (`src/tools/schemas.py`) to reduce lower-rank noise
   - [x] 1.3 Normalize and clean search snippets in `web_search` to eliminate boilerplate navigation, repetitive headers, and empty artifacts
   - [x] 1.4 Update unit and contract tests in `tests/test_tools.py` covering the 3,500-char truncation guard and 3-result Top-K default
-- [ ] 2.0 Implement Runtime Query Deduplication Guard in Agent Engine
-  - [ ] 2.1 Implement `calculate_jaccard_similarity(q1, q2)` helper in `src/utils.py` to detect near-duplicate queries (>0.75 similarity threshold)
-  - [ ] 2.2 Add per-turn query cache and interceptor hook in `src/agent.py` prior to executing external search tool calls
-  - [ ] 2.3 Construct synthetic feedback message (`[SYSTEM DEDUPLICATION NOTICE]`) commanding the model to halt repetition and pivot strategy
-  - [ ] 2.4 Update unit tests in `tests/test_agent.py` and `tests/test_utils.py` verifying exact & fuzzy deduplication interception without invoking live APIs
+- [x] 2.0 Implement Runtime Query Deduplication Guard in Agent Engine
+  - [x] 2.1 Implement `calculate_jaccard_similarity(q1, q2)` helper in `src/utils.py` to detect near-duplicate queries (>0.75 similarity threshold)
+  - [x] 2.2 Add per-turn query cache and interceptor hook in `src/agent.py` prior to executing external search tool calls
+  - [x] 2.3 Construct synthetic feedback message (`[SYSTEM DEDUPLICATION NOTICE]`) commanding the model to halt repetition and pivot strategy
+  - [x] 2.4 Update unit tests in `tests/test_agent.py` and `tests/test_utils.py` verifying exact & fuzzy deduplication interception without invoking live APIs
 - [ ] 3.0 Universal Meta-Cognitive Prompting & Early-Exit Protocol in GAIA Evaluator
   - [ ] 3.1 Formulate and integrate Universal Information Satiation directive (halt immediately upon locating first candidate evidence) in `GAIA_SYSTEM_PROMPT` (`src/gaia_evaluator.py`)
   - [ ] 3.2 Add Zero-Overhead Direct Path directive in `src/gaia_evaluator.py` strictly forbidding exploratory `os.walk` / `os.listdir` loops when attached files are provided
