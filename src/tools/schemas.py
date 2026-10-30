@@ -22,10 +22,10 @@ class WebSearchInput(BaseModel):
         ),
     )
     max_results: int = Field(
-        default=4,
+        default=3,
         ge=1,
         le=10,
-        description="Number of search results to return (default: 4, max: 10).",
+        description="Number of search results to return (default: 3, max: 10).",
     )
     topic: Literal["general", "news"] = Field(
         default="general",
@@ -48,28 +48,31 @@ class PythonInterpreterInput(BaseModel):
 
 
 class WorkspaceNotesInput(BaseModel):
-    """Input schema for local markdown notes and knowledge base management."""
+    """Input schema for local notes management operations."""
 
     action: Literal["read", "write", "append", "list", "search"] = Field(
         ...,
         description=(
-            "Action to perform: "
-            "'read' to read a note, "
-            "'write' to create or overwrite a note, "
-            "'append' to append text to an existing note, "
-            "'list' to list all note filenames in the workspace, "
-            "'search' to search for text inside all notes."
+            "Action to perform on notes: "
+            "'read' to view note content, "
+            "'write' to create/overwrite a note, "
+            "'append' to add content to an existing note, "
+            "'list' to list all notes, "
+            "'search' to find notes containing keywords."
         ),
     )
-    title: str | None = Field(
-        default=None,
-        description="Title or filename of the note (required for 'read', 'write', 'append').",
+    title: str = Field(
+        default="",
+        description=(
+            "Title or filename of the note without extension (e.g. 'meeting_notes', 'todo'). "
+            "Required for read, write, append."
+        ),
     )
-    content: str | None = Field(
-        default=None,
-        description="Text content to save or append (required for 'write' and 'append').",
+    content: str = Field(
+        default="",
+        description="Content to write or append to the note. Required for write and append.",
     )
-    query: str | None = Field(
-        default=None,
-        description="Keyword to search across notes (required for 'search' action).",
+    query: str = Field(
+        default="",
+        description="Keyword to search across notes. Required for search action.",
     )

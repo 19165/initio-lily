@@ -44,9 +44,9 @@ class TestLLMToolCallingContracts:
         assert schema["required"] == ["query"]
 
         # Valid input
-        valid = WebSearchInput(query="LangGraph tutorial", max_results=5, topic="general")
+        valid = WebSearchInput(query="LangGraph tutorial", topic="general")
         assert valid.query == "LangGraph tutorial"
-        assert valid.max_results == 5
+        assert valid.max_results == 3
 
         # Invalid: max_results exceeds limit of 10
         with pytest.raises(ValidationError):
@@ -149,13 +149,14 @@ class TestTavilyExternalResourceContract:
             assert "🔗 [Only Title](https://example.com)" in res
 
     def test_tavily_extract_url_contract(self):
-        """Verify contract for URL-triggered full webpage content extraction."""
+        """Verify contract for URL-triggered full webpage content extraction and 3500-char truncation."""
         mock_tavily = MagicMock()
+        long_content = "A" * 5000
         mock_tavily.extract.return_value = {
             "results": [
                 {
                     "url": "https://en.wikipedia.org/wiki/Artificial_intelligence",
-                    "raw_content": "Artificial intelligence is intelligence demonstrated by machines.",
+                    "raw_content": long_content,
                 }
             ]
         }
@@ -168,7 +169,8 @@ class TestTavilyExternalResourceContract:
                 urls=["https://en.wikipedia.org/wiki/Artificial_intelligence"]
             )
             assert "📄 Content from https://en.wikipedia.org/wiki/Artificial_intelligence:" in res
-            assert "intelligence demonstrated by machines" in res
+            assert "[TRUNCATED TO PREVENT CONTEXT OVERFLOW]" in res
+            assert len(res) <= 3700
 
     def test_tavily_network_error_contract(self):
         """Verify that external API network exceptions are caught and reported cleanly."""

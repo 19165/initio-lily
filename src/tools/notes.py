@@ -75,7 +75,7 @@ def workspace_notes(
         elif action == "write":
             if not title or not title.strip():
                 return "Error: 'title' is required for the 'write' action."
-            if content is None:
+            if not content or not content.strip():
                 return "Error: 'content' is required for the 'write' action."
 
             file_path = _get_safe_note_path(title)

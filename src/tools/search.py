@@ -6,7 +6,7 @@ from typing import Literal
 from langchain_core.tools import tool
 from tavily import TavilyClient
 
-from src.config import TAVILY_API_KEY, TOOL_DOC_MAX_CHARS
+from src.config import TAVILY_API_KEY, TOOL_SEARCH_EXTRACT_MAX_CHARS
 from src.tools.schemas import WebSearchInput
 from src.utils import retry_on_network_error
 
@@ -19,7 +19,7 @@ _URL_PATTERN = re.compile(r"^https?://[^\s]+", re.IGNORECASE)
 @retry_on_network_error(max_retries=3)
 def web_search(
     query: str,
-    max_results: int = 4,
+    max_results: int = 3,
     topic: Literal["general", "news"] = "general",
 ) -> str:
     """Search the web for real-time information or extract text from a specific webpage URL.
@@ -48,8 +48,9 @@ def web_search(
             if not raw_text.strip():
                 return f"No readable text content found at URL: {clean_query}"
 
-            truncated = raw_text[:TOOL_DOC_MAX_CHARS]
-            if len(raw_text) > TOOL_DOC_MAX_CHARS:
+            # Strict truncation guard to tame context bloat (Token Monster)
+            truncated = raw_text[:TOOL_SEARCH_EXTRACT_MAX_CHARS]
+            if len(raw_text) > TOOL_SEARCH_EXTRACT_MAX_CHARS:
                 truncated += "\n...[TRUNCATED TO PREVENT CONTEXT OVERFLOW]"
             return f"📄 Content from {clean_query}:\n\n{truncated}"
         except Exception as e:
@@ -79,8 +80,11 @@ def web_search(
         for item in items:
             title = item.get("title", "Untitled")
             url = item.get("url", "")
-            snippet = item.get("content", "").strip()
-            output_parts.append(f"🔗 [{title}]({url})\n{snippet}\n")
+            snippet = item.get("content", "") or ""
+            if snippet.strip():
+                output_parts.append(f"🔗 [{title}]({url})\n{snippet.strip()}\n")
+            elif title:
+                output_parts.append(f"🔗 [{title}]({url})\n")
 
         if not output_parts:
             return f"No web search results found for query: '{clean_query}'."
@@ -88,25 +92,10 @@ def web_search(
         return "\n".join(output_parts).strip()
 
     except Exception as e:
-        return f"Web search failed: {e!s}"
+        return f"Web search error: {e!s}"
 
 
-@tool
-@retry_on_network_error(max_retries=3)
-def search_web(
-    query: str,
-    max_results: int = 4,
-    topic: Literal["general", "news"] = "general",
-) -> str:
-    """Legacy alias for web_search."""
-    return web_search.invoke({"query": query, "max_results": max_results, "topic": topic})
-
-
-@tool
-@retry_on_network_error(max_retries=3)
-def fetch_web_page(url: str) -> str:
-    """Legacy alias for web_search URL extraction."""
-    return web_search.invoke({"query": url})
-
-
+# Backwards compatibility aliases
+search_web = web_search
+fetch_web_page = web_search
 
