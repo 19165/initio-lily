@@ -1,9 +1,17 @@
+import base64
+import io
 from unittest.mock import MagicMock
 
+import pytest
+from PIL import Image
+
 from src.utils import (
+    build_multimodal_human_message,
     calculate_jaccard_similarity,
     clean_markdown_text,
+    encode_image_to_base64,
     format_tool_result,
+    is_image_file,
     retry_on_network_error,
 )
 
@@ -114,4 +122,89 @@ class TestCalculateJaccardSimilarity:
         assert calculate_jaccard_similarity("", "test") == 0.0
         assert calculate_jaccard_similarity("test", "") == 0.0
         assert calculate_jaccard_similarity("", "") == 0.0
+
+
+class TestMultimodalUtils:
+    @pytest.fixture
+    def sample_image_bytes(self):
+        buf = io.BytesIO()
+        img = Image.new("RGB", (200, 100), color="pink")
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_is_image_file_valid_extensions(self):
+        assert is_image_file("diagram.PNG") is True
+        assert is_image_file("photo.jpg") is True
+        assert is_image_file("image.jpeg") is True
+        assert is_image_file("chart.webp") is True
+        assert is_image_file("drawing.bmp") is True
+        assert is_image_file("animation.gif") is True
+        assert is_image_file("scan.tiff") is True
+
+    def test_is_image_file_invalid_extensions(self):
+        assert is_image_file("document.pdf") is False
+        assert is_image_file("table.xlsx") is False
+        assert is_image_file("script.py") is False
+        assert is_image_file("notes.txt") is False
+        assert is_image_file("") is False
+        assert is_image_file(None) is False
+
+    def test_encode_image_to_base64_from_bytes(self, sample_image_bytes):
+        encoded = encode_image_to_base64(sample_image_bytes)
+        assert isinstance(encoded, str)
+        assert len(encoded) > 0
+        decoded_bytes = base64.b64decode(encoded)
+        decoded_img = Image.open(io.BytesIO(decoded_bytes))
+        assert decoded_img.size == (200, 100)
+
+    def test_encode_image_to_base64_from_file(self, tmp_path):
+        img_path = tmp_path / "test.png"
+        img = Image.new("RGB", (100, 50), color="blue")
+        img.save(img_path)
+
+        encoded = encode_image_to_base64(str(img_path))
+        assert isinstance(encoded, str)
+        decoded_bytes = base64.b64decode(encoded)
+        decoded_img = Image.open(io.BytesIO(decoded_bytes))
+        assert decoded_img.size == (100, 50)
+
+    def test_encode_image_proportional_resize(self):
+        # Create oversized image: 2000 x 1000
+        buf = io.BytesIO()
+        img = Image.new("RGB", (2000, 1000), color="green")
+        img.save(buf, format="PNG")
+
+        encoded = encode_image_to_base64(buf.getvalue(), max_dimension=500)
+        decoded_img = Image.open(io.BytesIO(base64.b64decode(encoded)))
+        # Expect scaled to 500 x 250
+        assert decoded_img.size == (500, 250)
+
+    def test_encode_image_invalid_source_raises(self):
+        with pytest.raises(FileNotFoundError):
+            encode_image_to_base64("non_existent_file.png")
+
+        with pytest.raises(ValueError):
+            encode_image_to_base64(b"not an image byte stream")
+
+        with pytest.raises(ValueError):
+            encode_image_to_base64("")
+
+    def test_build_multimodal_human_message_text_only(self):
+        msg = build_multimodal_human_message("Hello Lily")
+        assert msg.content == "Hello Lily"
+
+    def test_build_multimodal_human_message_with_image(self, sample_image_bytes):
+        msg = build_multimodal_human_message("Look at this", images=[sample_image_bytes])
+        assert isinstance(msg.content, list)
+        assert len(msg.content) == 2
+        assert msg.content[0] == {"type": "text", "text": "Look at this"}
+        assert msg.content[1]["type"] == "image_url"
+        assert msg.content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+    def test_build_multimodal_human_message_image_only(self, sample_image_bytes):
+        msg = build_multimodal_human_message("", images=[sample_image_bytes])
+        assert isinstance(msg.content, list)
+        assert len(msg.content) == 1
+        assert msg.content[0]["type"] == "image_url"
+
 

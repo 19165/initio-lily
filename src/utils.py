@@ -1,10 +1,17 @@
+import base64
 import functools
+import io
 import json
+import os
 import re
 import time
 from typing import Any
 
 import requests
+from langchain_core.messages import HumanMessage
+from PIL import Image, ImageOps
+
+from src.config import TOOL_IMAGE_MAX_DIMENSION
 
 try:
     import httpx
@@ -177,5 +184,118 @@ def calculate_jaccard_similarity(text1: str, text2: str) -> float:
     union = tokens1.union(tokens2)
 
     return len(intersection) / len(union)
+
+
+SUPPORTED_IMAGE_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".bmp",
+    ".gif",
+    ".tiff",
+    ".tif",
+}
+
+
+def is_image_file(file_path: str) -> bool:
+    """Check if the provided file path has a supported image extension."""
+    if not file_path or not isinstance(file_path, str):
+        return False
+    _, ext = os.path.splitext(file_path.strip().lower())
+    return ext in SUPPORTED_IMAGE_EXTENSIONS
+
+
+def encode_image_to_base64(
+    image_source: str | bytes,
+    max_dimension: int = TOOL_IMAGE_MAX_DIMENSION,
+    target_format: str = "PNG",
+) -> str:
+    """Safely load, downscale proportionally, and encode an image to Base64 string.
+
+    Features:
+    - Accepts local file path or raw bytes.
+    - Resolves EXIF orientation (e.g. rotated mobile photos).
+    - Proportional downscaling if width or height exceeds max_dimension.
+    - Defensive: raises descriptive ValueError or FileNotFoundError if unreadable.
+    """
+    if not image_source:
+        raise ValueError("Image source cannot be empty.")
+
+    try:
+        if isinstance(image_source, (str, os.PathLike)):
+            if not os.path.exists(image_source):
+                raise FileNotFoundError(f"Image file not found: {image_source}")
+            img = Image.open(image_source)
+        elif isinstance(image_source, bytes):
+            img = Image.open(io.BytesIO(image_source))
+        else:
+            raise TypeError(f"Unsupported image_source type: {type(image_source)}")
+
+        # Handle EXIF orientation
+        img = ImageOps.exif_transpose(img)
+
+        # Proportional resize guard
+        width, height = img.size
+        if width > max_dimension or height > max_dimension:
+            scale = min(max_dimension / width, max_dimension / height)
+            new_width = max(1, int(width * scale))
+            new_height = max(1, int(height * scale))
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+        # Mode normalization
+        fmt = target_format.upper()
+        if fmt in ["JPEG", "JPG"]:
+            if img.mode in ("RGBA", "P", "LA"):
+                img = img.convert("RGB")
+        elif img.mode not in ("RGB", "RGBA", "L"):
+            img = img.convert("RGB")
+
+        buf = io.BytesIO()
+        img.save(buf, format=fmt)
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
+    except Exception as e:
+        if isinstance(e, (FileNotFoundError, TypeError)):
+            raise
+        raise ValueError(f"Failed to process and encode image: {e}") from e
+
+
+def build_multimodal_human_message(
+    text: str,
+    images: list[str | bytes] | None = None,
+    max_dimension: int = TOOL_IMAGE_MAX_DIMENSION,
+) -> HumanMessage:
+    """Construct a LangChain HumanMessage compliant with Ollama multimodal input format.
+
+    - If no images provided, returns simple text HumanMessage.
+    - If images provided, returns content blocks: text + image_url blocks.
+    - Accepts either raw file paths, base64 strings, or raw image bytes.
+    """
+    clean_text = (text or "").strip()
+    if not images:
+        return HumanMessage(content=clean_text)
+
+    content_blocks: list[dict[str, Any]] = []
+    if clean_text:
+        content_blocks.append({"type": "text", "text": clean_text})
+
+    for img in images:
+        if not img:
+            continue
+        # If already a raw base64 string
+        if isinstance(img, str) and not os.path.exists(img) and len(img) > 100:
+            b64_str = img
+            if "," in b64_str:
+                b64_str = b64_str.split(",", 1)[1]
+        else:
+            b64_str = encode_image_to_base64(img, max_dimension=max_dimension)
+
+        content_blocks.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{b64_str}"},
+        })
+
+    return HumanMessage(content=content_blocks)
+
 
 
