@@ -11,6 +11,7 @@ This module provides a rich, minimalist command-line interface featuring:
 """
 
 import os
+import re
 import sys
 
 # -------------------------------------------------------------
@@ -43,7 +44,7 @@ from src.agent import LilyAgent
 from src.config import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_VISION_MODEL
 from src.db import get_all_facts
 from src.tools import ALL_TOOLS, list_notes
-from src.utils import clean_markdown_text
+from src.utils import clean_markdown_text, is_image_file
 
 # Global Rich Console Instance
 console = Console()
@@ -374,14 +375,34 @@ def main():
                 continue
 
             # ==================================================
-            # 2. Windows File Drag-and-Drop Normalization
+            # 2. Windows File Drag-and-Drop Normalization & Multimodal Image Detection
             # ==================================================
+            attached_images: list[str] = []
             if (user_input.startswith('"') and user_input.endswith('"')) or (
                 user_input.startswith("'") and user_input.endswith("'")
             ):
                 candidate_path = user_input[1:-1].strip()
                 if os.path.exists(candidate_path):
-                    user_input = f"ช่วยตรวจสอบและอธิบายไฟล์นี้ให้หน่อย: {candidate_path}"
+                    if is_image_file(candidate_path):
+                        attached_images.append(candidate_path)
+                        user_input = "ช่วยตรวจสอบและวิเคราะห์รายละเอียดในรูปภาพนี้ให้หน่อยค่ะ 🌸"
+                    else:
+                        user_input = f"ช่วยตรวจสอบและอธิบายไฟล์นี้ให้หน่อย: {candidate_path}"
+            else:
+                for token in re.findall(r'["\']([^"\']+)["\']|(\S+)', user_input):
+                    candidate = token[0] or token[1]
+                    if (
+                        is_image_file(candidate)
+                        and os.path.exists(candidate)
+                        and candidate not in attached_images
+                    ):
+                        attached_images.append(candidate)
+
+            if attached_images:
+                for img_p in attached_images:
+                    console.print(
+                        f"[bold magenta]🖼️ Image Attached:[/bold magenta] [cyan]{os.path.basename(img_p)}[/cyan]"
+                    )
 
             # ==================================================
             # 3. Live Markdown Streaming with Card-based Tool Telemetry
@@ -395,7 +416,9 @@ def main():
             accumulated_text = ""
 
             try:
-                for event_type, data in agent.chat_stream(user_input):
+                for event_type, data in agent.chat_stream(
+                    user_input, images=attached_images if attached_images else None
+                ):
                     # Event: ได้รับ Token จาก LLM
                     if event_type == "token":
                         if status._live.is_started:

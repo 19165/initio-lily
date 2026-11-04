@@ -45,10 +45,10 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 3.2 Automatically encode and pass image files directly to `LilyAgent.chat_stream(prompt, images=[resolved_file])` on turn 1
   - [x] 3.3 Update `GAIA_SYSTEM_PROMPT` and prompt text to instruct the agent that visual input is directly present, avoiding blind exploratory PIL steps
   - [x] 3.4 Add unit tests in `tests/test_gaia_evaluator.py` verifying that attached image tasks invoke multimodal inference directly
-- [ ] 4.0 Interactive Multimodal Support in Terminal CLI (Presentation Layer)
-  - [ ] 4.1 Update input parser in `main.py` to detect image paths or drag-and-dropped image files from Windows console
-  - [ ] 4.2 Render visual status badges (e.g. `🖼️ Image Attached: <filename>`) in Rich console when an image is loaded
-  - [ ] 4.3 Forward detected image paths into `agent.chat_stream(user_input, images=[image_path])`
+- [x] 4.0 Interactive Multimodal Support in Terminal CLI (Presentation Layer)
+  - [x] 4.1 Update input parser in `main.py` to detect image paths or drag-and-dropped image files from Windows console
+  - [x] 4.2 Render visual status badges (e.g. `🖼️ Image Attached: <filename>`) in Rich console when an image is loaded
+  - [x] 4.3 Forward detected image paths into `agent.chat_stream(user_input, images=[image_path])`
 - [ ] 5.0 End-to-End Verification, Code Quality & Documentation
   - [ ] 5.1 Run full test suite (`pytest`) and Ruff linter (`ruff check .`), ensuring 100% green build
   - [ ] 5.2 Verify multimodal inference end-to-end with sample images (`.png` / `.jpg`)
