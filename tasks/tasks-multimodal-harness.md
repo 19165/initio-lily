@@ -49,7 +49,7 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 4.1 Update input parser in `main.py` to detect image paths or drag-and-dropped image files from Windows console
   - [x] 4.2 Render visual status badges (e.g. `🖼️ Image Attached: <filename>`) in Rich console when an image is loaded
   - [x] 4.3 Forward detected image paths into `agent.chat_stream(user_input, images=[image_path])`
-- [ ] 5.0 End-to-End Verification, Code Quality & Documentation
-  - [ ] 5.1 Run full test suite (`pytest`) and Ruff linter (`ruff check .`), ensuring 100% green build
-  - [ ] 5.2 Verify multimodal inference end-to-end with sample images (`.png` / `.jpg`)
-  - [ ] 5.3 Commit all changes with clear conventional commit messages and push branch to origin
+- [x] 5.0 End-to-End Verification, Code Quality & Documentation
+  - [x] 5.1 Run full test suite (`pytest`) and Ruff linter (`ruff check .`), ensuring 100% green build
+  - [x] 5.2 Verify multimodal inference end-to-end with sample images (`.png` / `.jpg`)
+  - [x] 5.3 Commit all changes with clear conventional commit messages and push branch to origin
