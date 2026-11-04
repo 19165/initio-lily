@@ -45,7 +45,7 @@ from src.db import (
     reset_thread,
 )
 from src.tools import ALL_TOOLS
-from src.utils import calculate_jaccard_similarity
+from src.utils import build_multimodal_human_message, calculate_jaccard_similarity
 
 
 class DeduplicatingToolNode(ToolNode):
@@ -266,7 +266,11 @@ class LilyAgent:
         """Clear thread history in the checkpointer allowing a clean restart."""
         reset_thread(self.session_id, self.checkpointer)
 
-    def chat_stream(self, user_input: str) -> Generator[tuple[str, Any], None, None]:
+    def chat_stream(
+        self,
+        user_input: str,
+        images: list[str | bytes] | None = None,
+    ) -> Generator[tuple[str, Any], None, None]:
         """Execute autonomous ReAct loop streaming real-time telemetry events.
 
         Yields:
@@ -277,8 +281,8 @@ class LilyAgent:
             ("error", str): Descriptive failure notification.
         """
         clean_input = user_input.strip()
-        if not clean_input:
-            yield ("error", "ข้อความว่างเปล่า กรุณาพิมพ์คำถามหรือคำสั่งให้ลิลลี่นะคะ 🌸")
+        if not clean_input and not images:
+            yield ("error", "ข้อความว่างเปล่า กรุณาพิมพ์คำถามหรือแนบรูปภาพให้ลิลลี่นะคะ 🌸")
             return
 
         turn_start_time = time.perf_counter()
@@ -291,7 +295,11 @@ class LilyAgent:
         config["recursion_limit"] = self.max_steps * 2 + 1
 
         active_tool_calls: dict[str, dict[str, Any]] = {}
-        input_state = {"messages": [HumanMessage(content=clean_input)]}
+        if images:
+            human_msg = build_multimodal_human_message(clean_input, images=images)
+        else:
+            human_msg = HumanMessage(content=clean_input)
+        input_state = {"messages": [human_msg]}
 
         try:
             for mode, payload in self.graph.stream(
@@ -448,10 +456,10 @@ class LilyAgent:
         stats["working_context_messages"] = len(self.messages)
         return stats
 
-    def chat(self, user_input: str) -> str:
+    def chat(self, user_input: str, images: list[str | bytes] | None = None) -> str:
         """Synchronous chat interface collecting streamed text."""
         tokens: list[str] = []
-        for event_type, data in self.chat_stream(user_input):
+        for event_type, data in self.chat_stream(user_input, images=images):
             if event_type == "token":
                 tokens.append(data)
             elif event_type == "error":

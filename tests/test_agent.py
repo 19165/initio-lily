@@ -8,6 +8,7 @@ Tests verify:
 - Isolated execution using use_memory_for_testing=True.
 """
 
+import io
 from unittest.mock import MagicMock, patch
 
 from langchain_core.messages import (
@@ -17,6 +18,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from PIL import Image
 
 from src.agent import LilyAgent, safe_trim_context
 
@@ -335,4 +337,78 @@ class TestQueryDeduplicationInterception:
             assert "near-identical search query" in str(tool_msg2.content)
             # Tavily should NOT be called again
             assert mock_tavily.search.call_count == 1
+
+
+class RecordingMockChatModel:
+    def __init__(self, response: AIMessage):
+        self.response = response
+        self.received_messages: list[list[BaseMessage]] = []
+
+    def bind_tools(self, tools: list[object]) -> "RecordingMockChatModel":
+        return self
+
+    def invoke(self, messages: list[BaseMessage], **kwargs: object) -> AIMessage:
+        self.received_messages.append(messages)
+        return self.response
+
+
+class TestLilyAgentMultimodal:
+    def test_chat_stream_with_image(self):
+        buf = io.BytesIO()
+        img = Image.new("RGB", (100, 100), color="blue")
+        img.save(buf, format="PNG")
+        image_bytes = buf.getvalue()
+
+        mock_llm = RecordingMockChatModel(AIMessage(content="I see a blue square!"))
+        agent = LilyAgent(
+            session_id="test_mm_1",
+            model=mock_llm,
+            use_memory_for_testing=True,
+        )
+
+        events = list(agent.chat_stream("What is this?", images=[image_bytes]))
+        assert any(e[0] == "token" and "blue square" in e[1] for e in events)
+
+        assert len(mock_llm.received_messages) > 0
+        last_invocation_messages = mock_llm.received_messages[0]
+        human_msg = next(m for m in last_invocation_messages if isinstance(m, HumanMessage))
+        assert isinstance(human_msg.content, list)
+        assert human_msg.content[0] == {"type": "text", "text": "What is this?"}
+        assert human_msg.content[1]["type"] == "image_url"
+
+    def test_chat_stream_image_without_text(self):
+        buf = io.BytesIO()
+        img = Image.new("RGB", (50, 50), color="red")
+        img.save(buf, format="PNG")
+
+        mock_llm = RecordingMockChatModel(AIMessage(content="Image received"))
+        agent = LilyAgent(
+            session_id="test_mm_2",
+            model=mock_llm,
+            use_memory_for_testing=True,
+        )
+        events = list(agent.chat_stream("", images=[buf.getvalue()]))
+        assert not any(e[0] == "error" and "ข้อความว่างเปล่า" in str(e[1]) for e in events)
+
+    def test_chat_stream_empty_text_and_no_images_yields_error(self):
+        agent = LilyAgent(session_id="test_mm_3", use_memory_for_testing=True)
+        events = list(agent.chat_stream("   ", images=None))
+        assert len(events) == 1
+        assert events[0][0] == "error"
+        assert "ข้อความว่างเปล่า" in events[0][1]
+
+    def test_chat_method_forwards_images(self):
+        buf = io.BytesIO()
+        img = Image.new("RGB", (20, 20), color="yellow")
+        img.save(buf, format="PNG")
+
+        mock_llm = RecordingMockChatModel(AIMessage(content="Yellow dot"))
+        agent = LilyAgent(
+            session_id="test_mm_4",
+            model=mock_llm,
+            use_memory_for_testing=True,
+        )
+        answer = agent.chat("Look here", images=[buf.getvalue()])
+        assert "Yellow dot" in answer
+
 
