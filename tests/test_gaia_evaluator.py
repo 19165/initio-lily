@@ -3,7 +3,8 @@
 import os
 import tempfile
 
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from PIL import Image
 
 from src.gaia_evaluator import (
     GAIA_SYSTEM_PROMPT,
@@ -232,3 +233,47 @@ class TestGAIABenchmarkAgentExecution:
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+
+    def test_attached_image_triggers_multimodal_injection(self):
+        with tempfile.NamedTemporaryFile("wb", suffix=".png", delete=False) as f:
+            img = Image.new("RGB", (64, 64), color="red")
+            img.save(f, format="PNG")
+            temp_img_path = f.name
+
+        try:
+            captured_messages: list[BaseMessage] = []
+
+            class SpyModel(MockChatModel):
+                def invoke(self, messages: list[BaseMessage], **kwargs: object) -> AIMessage:
+                    captured_messages.extend(messages)
+                    return AIMessage(content="Red")
+
+            spy_model = SpyModel([AIMessage(content="Red")])
+            evaluator = GAIABenchmarkAgent(
+                max_steps=2,
+                verbose=False,
+                model=spy_model,
+                use_memory_for_testing=True,
+            )
+
+            res = evaluator(
+                "What color is this image?",
+                file_path=temp_img_path,
+                task_id="task_mm_image_1",
+            )
+            assert res == "Red"
+
+            human_msgs = [m for m in captured_messages if isinstance(m, HumanMessage)]
+            assert len(human_msgs) > 0
+            first_human_msg = human_msgs[0]
+
+            assert isinstance(first_human_msg.content, list)
+            text_block = next(b for b in first_human_msg.content if b.get("type") == "text")
+            image_block = next(b for b in first_human_msg.content if b.get("type") == "image_url")
+
+            assert "Attached Image Context" in text_block["text"]
+            assert image_block["image_url"]["url"].startswith("data:image/png;base64,")
+        finally:
+            if os.path.exists(temp_img_path):
+                os.remove(temp_img_path)
+

@@ -24,7 +24,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.agent import LilyAgent  # noqa: E402
 from src.config import AGENT_MAX_STEPS  # noqa: E402
-from src.utils import clean_markdown_text  # noqa: E402
+from src.utils import clean_markdown_text, is_image_file  # noqa: E402
 
 GAIA_SYSTEM_PROMPT = """You are an expert autonomous problem-solving agent taking the GAIA benchmark test.
 Your goal is to solve the task accurately and output ONLY the exact final answer.
@@ -42,14 +42,16 @@ CRITICAL BENCHMARK RULES:
      * Looking up real-world facts, current information, and extracting web page content via URLs.
    - Use `workspace_notes` if you need a persistent scratchpad for multi-step reasoning.
 3. Think step-by-step and verify your calculations before giving the final answer.
-4. Universal Information Satiation (Halt upon Candidate Evidence):
+4. Multimodal Visual Perception:
+   - When an attached image is provided, inspect and perceive it directly in your visual context. If the answer is clearly evident from the image, synthesize your answer immediately without wasting tool calls.
+5. Universal Information Satiation (Halt upon Candidate Evidence):
    - As soon as you discover candidate evidence or extract a factual answer from a tool output, you MUST HALT all further tool calls immediately.
    - Do NOT execute redundant cross-checks or repetitive searches once the required information is located.
    - Synthesize and output the final exact-match answer directly in the very next step.
-5. Zero-Overhead Direct Path:
+6. Zero-Overhead Direct Path:
    - When an Attached File path is provided in the prompt, inspect that exact path directly.
    - You are STRICTLY FORBIDDEN from executing exploratory directory listing (`os.walk`, `os.listdir`, `glob`) to search for other files.
-6. Early-Exit on Hard Limitations:
+7. Early-Exit on Hard Limitations:
    - If a task requires specialized external system libraries, hardware, or codecs that are unavailable in the Python environment (e.g. missing audio/video decoders, unresolvable OS dependencies), do NOT attempt iterative workarounds.
    - Immediately conclude your reasoning and formulate your best plausible final estimate from the prompt context alone."""
 
@@ -154,15 +156,27 @@ class GAIABenchmarkAgent:
 
         prompt = ""
         resolved_file = self._resolve_file(file_name=file_name, file_path=file_path)
+        images_to_inject: list[str] | None = None
 
         if resolved_file:
-            prompt += (
-                f"Attached File Context: You have access to a local file at '{resolved_file}'. "
-                "You can inspect, read, and process it using the `python_interpreter` tool.\n"
-                "[DIRECTIVE: ZERO-OVERHEAD DIRECT PATH]\n"
-                "- Open and inspect this exact file path directly in `python_interpreter` on your very first step.\n"
-                "- You are STRICTLY FORBIDDEN from executing exploratory directory listing (`os.walk`, `os.listdir`, `glob`) to search for other files.\n\n"
-            )
+            if is_image_file(resolved_file):
+                images_to_inject = [resolved_file]
+                prompt += (
+                    f"Attached Image Context: The attached image file '{resolved_file}' has been directly loaded into your visual context. "
+                    "Perceive and analyze its visual features directly.\n"
+                    "[DIRECTIVE: ZERO-OVERHEAD DIRECT PATH]\n"
+                    "- Synthesize your final exact answer immediately from visual context if evident.\n"
+                    "- Use `python_interpreter` only if you require precise pixel measurements, crops, or OCR on '{resolved_file}'.\n"
+                    "- You are STRICTLY FORBIDDEN from executing exploratory directory listing (`os.walk`, `os.listdir`, `glob`) to search for other files.\n\n"
+                )
+            else:
+                prompt += (
+                    f"Attached File Context: You have access to a local file at '{resolved_file}'. "
+                    "You can inspect, read, and process it using the `python_interpreter` tool.\n"
+                    "[DIRECTIVE: ZERO-OVERHEAD DIRECT PATH]\n"
+                    "- Open and inspect this exact file path directly in `python_interpreter` on your very first step.\n"
+                    "- You are STRICTLY FORBIDDEN from executing exploratory directory listing (`os.walk`, `os.listdir`, `glob`) to search for other files.\n\n"
+                )
         elif file_name:
             prompt += (
                 f"Attached File Context: The question references file '{file_name}', "
@@ -196,7 +210,7 @@ class GAIABenchmarkAgent:
         trajectory: list[dict[str, Any]] = []
         active_tool_calls: dict[int, dict[str, Any]] = {}
 
-        for event_type, data in agent.chat_stream(prompt):
+        for event_type, data in agent.chat_stream(prompt, images=images_to_inject):
             if event_type == "token":
                 raw_answer += data
 

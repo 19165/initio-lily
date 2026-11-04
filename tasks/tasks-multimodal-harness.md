@@ -40,11 +40,11 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 2.2 Construct multimodal `HumanMessage` dynamically when images are present, preserving system prompt and context trimming
   - [x] 2.3 Update `LilyAgent.chat()` in `src/agent.py` to forward `images` parameter to `chat_stream()`
   - [x] 2.4 Add unit tests in `tests/test_agent.py` verifying multimodal message ingestion and state execution
-- [ ] 3.0 Direct Vision Injection in GAIA Benchmark Harness
-  - [ ] 3.1 Update `GAIABenchmarkAgent.__call__()` in `src/gaia_evaluator.py` to inspect `resolved_file` with `is_image_file()`
-  - [ ] 3.2 Automatically encode and pass image files directly to `LilyAgent.chat_stream(prompt, images=[resolved_file])` on turn 1
-  - [ ] 3.3 Update `GAIA_SYSTEM_PROMPT` and prompt text to instruct the agent that visual input is directly present, avoiding blind exploratory PIL steps
-  - [ ] 3.4 Add unit tests in `tests/test_gaia_evaluator.py` verifying that attached image tasks invoke multimodal inference directly
+- [x] 3.0 Direct Vision Injection in GAIA Benchmark Harness
+  - [x] 3.1 Update `GAIABenchmarkAgent.__call__()` in `src/gaia_evaluator.py` to inspect `resolved_file` with `is_image_file()`
+  - [x] 3.2 Automatically encode and pass image files directly to `LilyAgent.chat_stream(prompt, images=[resolved_file])` on turn 1
+  - [x] 3.3 Update `GAIA_SYSTEM_PROMPT` and prompt text to instruct the agent that visual input is directly present, avoiding blind exploratory PIL steps
+  - [x] 3.4 Add unit tests in `tests/test_gaia_evaluator.py` verifying that attached image tasks invoke multimodal inference directly
 - [ ] 4.0 Interactive Multimodal Support in Terminal CLI (Presentation Layer)
   - [ ] 4.1 Update input parser in `main.py` to detect image paths or drag-and-dropped image files from Windows console
   - [ ] 4.2 Render visual status badges (e.g. `🖼️ Image Attached: <filename>`) in Rich console when an image is loaded
